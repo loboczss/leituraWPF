@@ -13,7 +13,7 @@ namespace leituraWPF
         {
             InitializeComponent();
 
-            LblLocalVer.Text = local?.ToString() ?? "-";
+            LblLocalVer.Text  = local?.ToString()  ?? "-";
             LblRemoteVer.Text = remote?.ToString() ?? "-";
 
             _seconds = Math.Max(5, timeoutSeconds); // pequena proteção

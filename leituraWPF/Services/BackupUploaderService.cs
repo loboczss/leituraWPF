@@ -1,3 +1,4 @@
+// Services/BackupUploaderService.cs
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -194,14 +195,20 @@ namespace leituraWPF.Services
 
         private async Task EnsureFolderAsync(string driveId, CancellationToken ct)
         {
-            var folder = _cfg.BackupFolder ?? "LogsRenomeacao";
+            var folder = string.IsNullOrWhiteSpace(_cfg.BackupFolder) ? "LogsRenomeacao" : _cfg.BackupFolder;
             var getUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(folder)}";
             using var resp = await _http.GetAsync(getUrl, ct);
             if (resp.StatusCode == HttpStatusCode.NotFound)
             {
                 var createUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root/children";
-                var body = new { name = folder, folder = new { }, @"@microsoft.graph.conflictBehavior" = "replace" };
-                using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                // >>> correção: usar JsonObject para suportar a chave "@microsoft.graph.conflictBehavior"
+                var body = new JsonObject
+                {
+                    ["name"] = folder,
+                    ["folder"] = new JsonObject(),
+                    ["@microsoft.graph.conflictBehavior"] = "replace"
+                };
+                using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
                 using var resp2 = await _http.PostAsync(createUrl, content, ct);
                 // 409 = já existe → ignora
             }
@@ -209,7 +216,8 @@ namespace leituraWPF.Services
 
         private async Task UploadSmallAsync(string driveId, string name, string path, CancellationToken ct)
         {
-            var url = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(_cfg.BackupFolder)}/{Uri.EscapeDataString(name)}:/content?@microsoft.graph.conflictBehavior=replace";
+            var folder = string.IsNullOrWhiteSpace(_cfg.BackupFolder) ? "LogsRenomeacao" : _cfg.BackupFolder;
+            var url = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(folder)}/{Uri.EscapeDataString(name)}:/content?@microsoft.graph.conflictBehavior=replace";
             using var fs = File.OpenRead(path);
             using var content = new StreamContent(fs);
             using var resp = await _http.PutAsync(url, content, ct);
@@ -218,9 +226,17 @@ namespace leituraWPF.Services
 
         private async Task UploadLargeAsync(string driveId, string name, string path, long size, CancellationToken ct)
         {
-            var createUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(_cfg.BackupFolder)}/{Uri.EscapeDataString(name)}:/createUploadSession";
-            var body = new { item = new { @"@microsoft.graph.conflictBehavior" = "replace" } };
-            using var createContent = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            var folder = string.IsNullOrWhiteSpace(_cfg.BackupFolder) ? "LogsRenomeacao" : _cfg.BackupFolder;
+            var createUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(folder)}/{Uri.EscapeDataString(name)}:/createUploadSession";
+            // >>> correção: usar JsonObject aqui também
+            var body = new JsonObject
+            {
+                ["item"] = new JsonObject
+                {
+                    ["@microsoft.graph.conflictBehavior"] = "replace"
+                }
+            };
+            using var createContent = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
             using var resp = await _http.PostAsync(createUrl, createContent, ct);
             await EnsureSuccessAsync(resp, "createUploadSession");
             var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct));
