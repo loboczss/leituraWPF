@@ -11,8 +11,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using WpfMessageBox = System.Windows.MessageBox;
 using System.Windows.Input;
+using WpfMessageBox = System.Windows.MessageBox;
 
 namespace leituraWPF
 {
@@ -24,6 +24,9 @@ namespace leituraWPF
         private readonly RenamerService _renamer = new RenamerService();
         private readonly InstallationRenamerService _installRenamer = new InstallationRenamerService();
         private readonly InstalacaoService _instalacao = new InstalacaoService();
+
+        private readonly AtualizadorService _atualizador = new AtualizadorService();
+        private bool _checkedUpdateAtStartup = false;
 
         private string _sourceFolderPath = string.Empty;
         private readonly string _downloadsDir;
@@ -44,13 +47,94 @@ namespace leituraWPF
             _downloader = new GraphDownloader(Program.Config, _tokenService, this, this);
             _jsonReader = new JsonReaderService(this);
 
-            Loaded += async (_, __) => await EnsureLocalCacheAsync();
+            // No carregamento: checa atualização (com timeout) e prepara o cache local
+            this.Loaded += MainWindow_Loaded;
+        }
+
+        private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)
+        {
+            // roda só uma vez
+            if (!_checkedUpdateAtStartup)
+            {
+                _checkedUpdateAtStartup = true;
+                // Checa atualização sem travar UI
+                _ = CheckUpdatesOnStartupAsync();
+            }
+
+            // Prepara cache local para buscas/renomeação offline
+            await EnsureLocalCacheAsync();
+        }
+
+        private async Task CheckUpdatesOnStartupAsync()
+        {
+            try
+            {
+                var (localV, remoteV) = await _atualizador.GetVersionsAsync();
+                if (remoteV <= localV) return; // já está atualizado
+
+                // Prompt com timeout de 60s: se não responder, atualiza
+                var prompt = new UpdatePromptWindow(localV, remoteV, timeoutSeconds: 60)
+                {
+                    Owner = this
+                };
+                var result = prompt.ShowDialog();
+
+                // result == true (atualizar agora) / result == null (auto-timeout) ⇒ atualiza
+                if (result != false)
+                {
+                    var zip = await _atualizador.DownloadLatestReleaseAsync(preferNameContains: null);
+                    if (zip == null)
+                    {
+                        Log("[WARN] Release encontrado, mas sem asset .zip para baixar.");
+                        return;
+                    }
+
+                    var bat = _atualizador.CreateUpdateBatch(zip);
+
+                    // dispara o .bat e encerra para permitir cópia/substituição
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "cmd.exe",
+                        Arguments = $"/C start \"\" \"{bat}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+
+                    Application.Current.Shutdown();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[WARN] Falha ao checar/atualizar: {ex.Message}");
+                // segue a vida; não quebra o startup
+            }
         }
 
         /* ---- UI helpers ---- */
-        private void SetStatus(string s) { if (Dispatcher.CheckAccess()) txtStatus.Text = s; else Dispatcher.Invoke(() => txtStatus.Text = s); }
-        private void SetResumo(string s) { if (Dispatcher.CheckAccess()) txtResumo.Text = s; else Dispatcher.Invoke(() => txtResumo.Text = s); }
-        private void ClearLog() { if (Dispatcher.CheckAccess()) { _logItems.Clear(); txtLog.Clear(); } else Dispatcher.Invoke(ClearLog); }
+        private void SetStatus(string s)
+        {
+            if (Dispatcher.CheckAccess()) txtStatus.Text = s;
+            else Dispatcher.Invoke(() => txtStatus.Text = s);
+        }
+
+        private void SetResumo(string s)
+        {
+            if (Dispatcher.CheckAccess()) txtResumo.Text = s;
+            else Dispatcher.Invoke(() => txtResumo.Text = s);
+        }
+
+        private void ClearLog()
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                _logItems.Clear();
+                txtLog.Clear();
+            }
+            else
+            {
+                Dispatcher.Invoke(ClearLog);
+            }
+        }
 
         private string GetSelectedUf()
         {
@@ -141,10 +225,12 @@ namespace leituraWPF
 
             try
             {
-                var downloaded = await _downloader.DownloadMatchingJsonAsync(_downloadsDir,
-                    extraQueries: new[] { "Instalacao_AC" }); // baixa também instalação
-                SetStatus($"Download finalizado. {downloaded.Count} arquivo(s).");
+                var downloaded = await _downloader.DownloadMatchingJsonAsync(
+                    _downloadsDir,
+                    extraQueries: new[] { "Instalacao_AC" } // baixa também instalação
+                );
 
+                SetStatus($"Download finalizado. {downloaded.Count} arquivo(s).");
                 SetStatus("Atualizando cache local (manutenção)...");
                 await EnsureLocalCacheAsync(forceReload: true);
                 Log("[OK] Sincronização concluída.");
@@ -204,7 +290,6 @@ namespace leituraWPF
                         return;
                     }
 
-                    // Se o fallback renomeou com sucesso, apenas atualiza UI aqui
                     btnAbrirPasta.Visibility = Visibility.Visible;
                     SetStatus("Concluído.");
                     return;
@@ -238,7 +323,7 @@ namespace leituraWPF
                     return;
                 }
 
-                // Se achou o record no cache, renomeia aqui mesmo (fluxo "antigo")
+                // Achou o record no cache → renomeia aqui mesmo
                 if (!await EnsureSourceFolderHasFilesAsync()) return;
 
                 btnProcessar.IsEnabled = false;
@@ -312,8 +397,8 @@ namespace leituraWPF
 
             if (!Directory.Exists(_sourceFolderPath) || !Directory.EnumerateFiles(_sourceFolderPath).Any())
             {
-                MessageBox.Show("A pasta de origem não contém arquivos. Selecione arquivos para continuar.",
-                                "Aviso", MessageBoxButton.OK, MessageBoxImage.Warning);
+                WpfMessageBox.Show("A pasta de origem não contém arquivos. Selecione arquivos para continuar.",
+                                   "Aviso", MessageBoxButton.OK, MessageBoxImage.Warning);
                 SetStatus("Aguardando arquivos...");
                 return false;
             }
