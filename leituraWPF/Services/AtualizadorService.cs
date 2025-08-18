@@ -156,12 +156,15 @@ namespace leituraWPF.Services
             sb.AppendLine($"set ZIP=\"{zipPath}\"");
             sb.AppendLine($"set INSTALL=\"{installDir}\"");
             sb.AppendLine($"set TEMP_DIR=%TEMP%\\{AppProductName}_Update");
+            sb.AppendLine($"set BACKUP_DIR=%TEMP%\\{AppProductName}_Backup");
             sb.AppendLine();
-            sb.AppendLine("echo [INFO] Preparando atualizacao... >nul");
+            sb.AppendLine("echo [INFO] Preparando atualizacao...");
             sb.AppendLine("if exist \"%TEMP_DIR%\" rmdir /s /q \"%TEMP_DIR%\" >nul 2>nul");
             sb.AppendLine("mkdir \"%TEMP_DIR%\" >nul 2>nul");
+            sb.AppendLine("if exist \"%BACKUP_DIR%\" rmdir /s /q \"%BACKUP_DIR%\" >nul 2>nul");
+            sb.AppendLine("mkdir \"%BACKUP_DIR%\" >nul 2>nul");
             sb.AppendLine();
-            sb.AppendLine("echo [INFO] Encerrando aplicacao se ainda estiver aberta...");
+            sb.AppendLine("echo [INFO] Encerrando aplicacao...");
             sb.AppendLine(":waitloop");
             sb.AppendLine("tasklist | find /I \"%APP_EXE%\" >nul 2>nul");
             sb.AppendLine("if %ERRORLEVEL%==0 (");
@@ -170,11 +173,28 @@ namespace leituraWPF.Services
             sb.AppendLine("  goto waitloop");
             sb.AppendLine(")");
             sb.AppendLine();
+            sb.AppendLine("echo [INFO] Fazendo backup da instalacao atual...");
+            sb.AppendLine("xcopy \"%INSTALL%\\*\" \"%BACKUP_DIR%\\\" /E /I /Y >nul 2>nul");
+            sb.AppendLine("if %ERRORLEVEL% NEQ 0 (");
+            sb.AppendLine("  echo [FATAL] Falha ao criar backup. Abortando.");
+            sb.AppendLine("  exit /b 1");
+            sb.AppendLine(")");
+            sb.AppendLine();
             sb.AppendLine("echo [INFO] Extraindo pacote...");
             sb.AppendLine("powershell -NoLogo -NoProfile -Command \"Expand-Archive -Path '%ZIP%' -DestinationPath '%TEMP_DIR%' -Force\" >nul 2>nul");
+            sb.AppendLine("if %ERRORLEVEL% NEQ 0 (");
+            sb.AppendLine("  echo [ERRO] Falha ao extrair pacote. Restaurando backup...");
+            sb.AppendLine("  xcopy \"%BACKUP_DIR%\\*\" \"%INSTALL%\\\" /E /I /Y >nul 2>nul");
+            sb.AppendLine("  exit /b 1");
+            sb.AppendLine(")");
             sb.AppendLine();
-            sb.AppendLine("echo [INFO] Copiando arquivos...");
+            sb.AppendLine("echo [INFO] Copiando novos arquivos...");
             sb.AppendLine("xcopy \"%TEMP_DIR%\\*\" \"%INSTALL%\\\" /E /I /Y >nul 2>nul");
+            sb.AppendLine("if %ERRORLEVEL% NEQ 0 (");
+            sb.AppendLine("  echo [ERRO] Falha ao copiar arquivos. Restaurando backup...");
+            sb.AppendLine("  xcopy \"%BACKUP_DIR%\\*\" \"%INSTALL%\\\" /E /I /Y >nul 2>nul");
+            sb.AppendLine("  exit /b 1");
+            sb.AppendLine(")");
             sb.AppendLine();
             sb.AppendLine("echo [INFO] Criando atalho na area de trabalho...");
             sb.AppendLine("set DESKTOP=%USERPROFILE%\\Desktop");
@@ -182,15 +202,17 @@ namespace leituraWPF.Services
             sb.AppendLine();
             sb.AppendLine("echo [INFO] Limpando temporarios...");
             sb.AppendLine("rmdir /s /q \"%TEMP_DIR%\" >nul 2>nul");
+            sb.AppendLine("rmdir /s /q \"%BACKUP_DIR%\" >nul 2>nul");
             sb.AppendLine();
             sb.AppendLine("echo [INFO] Iniciando aplicativo atualizado...");
             sb.AppendLine($"start \"\" \"%INSTALL%\\{AppExeName}\"");
             sb.AppendLine("endlocal");
-            sb.AppendLine("exit");
+            sb.AppendLine("exit /b 0");
 
             File.WriteAllText(batchPath, sb.ToString(), Encoding.UTF8);
             return batchPath;
         }
+
 
         /// <summary>
         /// Helper: cria HttpClient com User-Agent e timeout decente.
