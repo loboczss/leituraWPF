@@ -39,6 +39,8 @@ namespace leituraWPF.Services
 
         public string LastDestination { get; private set; } = string.Empty;
 
+        public event Action<string>? FileReadyForBackup;
+
         #region Helpers
         private static string Sanitize(string input)
         {
@@ -261,6 +263,9 @@ namespace leituraWPF.Services
                         File.Copy(src, dst, true);
                         File.Delete(src);
                     }
+
+                    try { FileReadyForBackup?.Invoke(dst); } catch { /* ignore */ }
+
                     Step();
                 }
 

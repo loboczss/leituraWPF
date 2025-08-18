@@ -24,6 +24,7 @@ namespace leituraWPF
         private readonly RenamerService _renamer = new RenamerService();
         private readonly InstallationRenamerService _installRenamer = new InstallationRenamerService();
         private readonly InstalacaoService _instalacao = new InstalacaoService();
+        private readonly BackupUploaderService _backup;
 
         private readonly AtualizadorService _atualizador = new AtualizadorService();
         private bool _checkedUpdateAtStartup = false;
@@ -46,6 +47,31 @@ namespace leituraWPF
             _tokenService = new TokenService(Program.Config);
             _downloader = new GraphDownloader(Program.Config, _tokenService, this, this);
             _jsonReader = new JsonReaderService(this);
+            _backup = new BackupUploaderService(Program.Config, _tokenService);
+
+            _renamer.FileReadyForBackup += async p => await _backup.EnqueueAsync(p);
+            _installRenamer.FileReadyForBackup += async p => await _backup.EnqueueAsync(p);
+
+            _backup.StatusChanged += msg => Log($"[BACKUP] {msg}");
+            _backup.FileUploaded += (local, remote, bytes) =>
+            {
+                Log($"[UPL] {Path.GetFileName(local)} → {remote} ({bytes:n0} bytes)");
+                Dispatcher.Invoke(() =>
+                {
+                    TxtSyncStatus.Text = $"Enviado: {Path.GetFileName(local)}";
+                });
+            };
+            _backup.CountersChanged += (pend, sent) =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    TxtSyncStatus.Text = $"Pendentes: {pend} | Enviados (sessão): {sent}";
+                    TxtLastUpdate.Text = _backup.LastRunUtc is { } t
+                        ? $"Última sync: {t:dd/MM HH:mm}" : "Última sync: —";
+                });
+            };
+
+            _backup.Start();
 
             // No carregamento: checa atualização (com timeout) e prepara o cache local
             this.Loaded += MainWindow_Loaded;
@@ -411,6 +437,30 @@ namespace leituraWPF
             {
                 btnProcessar_Click(sender, e);
                 e.Handled = true;
+            }
+        }
+
+        private async void BtnSyncAll_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                BtnSyncAll.IsEnabled = false;
+                UploadBar.Visibility = Visibility.Visible;
+                UploadBar.IsIndeterminate = true;
+                TxtSyncStatus.Text = "Sincronizando...";
+                await _backup.ForceRunOnceAsync();
+                TxtSyncStatus.Text = $"Pendentes: {_backup.PendingCount} | Enviados (sessão): {_backup.UploadedCountSession}";
+                TxtLastUpdate.Text = _backup.LastRunUtc is { } t ? $"Última sync: {t:dd/MM HH:mm}" : "Última sync: —";
+            }
+            catch (Exception ex)
+            {
+                Log($"[WARN] Sync manual falhou: {ex.Message}");
+            }
+            finally
+            {
+                UploadBar.IsIndeterminate = false;
+                UploadBar.Visibility = Visibility.Collapsed;
+                BtnSyncAll.IsEnabled = true;
             }
         }
 
