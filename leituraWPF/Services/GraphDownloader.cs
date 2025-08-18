@@ -319,7 +319,7 @@ namespace leituraWPF.Services
             if (resp.IsSuccessStatusCode) return;
 
             string body = string.Empty;
-            try { body = await resp.Content.ReadAsStringAsync(); } catch { /* ignore */ }
+            try { body = await resp.Content.ReadAsStringAsync(); } catch { /* ignore  */ }
 
             if (resp.StatusCode == HttpStatusCode.BadRequest)
                 throw new GraphBadRequestException($"{op} retornou 400. Corpo: {Truncate(body, 500)}");
