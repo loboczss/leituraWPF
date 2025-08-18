@@ -1,0 +1,379 @@
+﻿<Window x:Class="leituraWPF.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="leituraWPF"
+        Width="1020" Height="650"
+        MinWidth="820" MinHeight="540"
+        WindowStartupLocation="CenterScreen"
+        Background="#f4f7fa">
+
+    <!-- ——— Recursos ——— -->
+    <Window.Resources>
+
+        <!-- Cartão -->
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background"   Value="#FAFAFE"/>
+            <Setter Property="CornerRadius" Value="13"/>
+            <Setter Property="Padding"      Value="32,26"/>
+            <Setter Property="Margin"       Value="22,14,22,12"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#223c5c"
+                                      Opacity="0.12"
+                                      BlurRadius="19"
+                                      ShadowDepth="2"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Botões -->
+        <ControlTemplate x:Key="RoundedButtonTemplate" TargetType="Button">
+            <Border Background="{TemplateBinding Background}"
+                    CornerRadius="7"
+                    Padding="{TemplateBinding Padding}">
+                <ContentPresenter HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+            </Border>
+        </ControlTemplate>
+
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Template"       Value="{StaticResource RoundedButtonTemplate}"/>
+            <Setter Property="Background"     Value="#007ACC"/>
+            <Setter Property="Foreground"     Value="White"/>
+            <Setter Property="Padding"        Value="13,6"/>
+            <Setter Property="FontWeight"     Value="SemiBold"/>
+            <Setter Property="FontSize"       Value="15"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Margin"         Value="0,0,10,0"/>
+            <Setter Property="Cursor"         Value="Hand"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#0585db"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#007acc" BlurRadius="13"
+                                              ShadowDepth="1" Opacity="0.18"/>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ProcessarButton" TargetType="Button"
+               BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Background" Value="#48bc46"/>
+            <Setter Property="Margin"     Value="0,0,0,0"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#75ea7a"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DangerButton" TargetType="Button"
+               BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Background" Value="#F34C4C"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#ff8383"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- TextBox underline -->
+        <Style x:Key="BottomBorderTextBox" TargetType="TextBox">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="#007ACC"/>
+            <Setter Property="BorderThickness" Value="0,0,0,2"/>
+            <Setter Property="Padding"         Value="8,5,8,5"/>
+            <Setter Property="Margin"          Value="0,0,13,0"/>
+            <Setter Property="FontSize"        Value="17"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="0,0,7,7">
+                            <ScrollViewer x:Name="PART_ContentHost"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- DataGrid Header -->
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background"                 Value="#EDF4FB"/>
+            <Setter Property="Foreground"                 Value="#223c5c"/>
+            <Setter Property="FontWeight"                 Value="Bold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="Padding"                    Value="12,7"/>
+            <Setter Property="FontSize"                   Value="13"/>
+        </Style>
+
+        <!-- Células (texto preto, herdam fundo da linha) -->
+        <Style x:Key="CellCenter" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment"   Value="Center"/>
+            <Setter Property="FontWeight"          Value="Normal"/>
+            <Setter Property="TextWrapping"        Value="Wrap"/>
+            <Setter Property="Foreground"          Value="#1a1a1a"/>
+        </Style>
+
+        <!-- Versão para TextBox que permite seleção de texto -->
+        <Style x:Key="CellCenterSelectable" TargetType="TextBox">
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="#1a1a1a"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+        </Style>
+
+        <!-- Linhas coloridas do log (pinta o BACKGROUND) -->
+        <Style x:Key="LogRowStyle" TargetType="DataGridRow">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#1a1a1a"/>
+            <Setter Property="MinHeight"  Value="29"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tipo}" Value="INFO">
+                    <Setter Property="Foreground" Value="Green"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tipo}" Value="WARN">
+                    <Setter Property="Foreground" Value="Goldenrod"/>
+                    <Setter Property="Background" Value="#fffce5"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tipo}" Value="ERROR">
+                    <Setter Property="Foreground" Value="Red"/>
+                    <Setter Property="Background" Value="#fff1f1"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tipo}" Value="CRITICAL">
+                    <Setter Property="Foreground" Value="Red"/>
+                    <Setter Property="FontWeight" Value="Bold"/>
+                    <Setter Property="Background" Value="#fff1f1"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <!-- ——— Layout Principal ——— -->
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition/>
+            <RowDefinition Height="Auto" MinHeight="38"/>
+        </Grid.RowDefinitions>
+
+        <!-- Painel Lateral -->
+        <Border Grid.Row="0" Grid.Column="0"
+                Background="#007ACC" Padding="20,24"
+                Grid.RowSpan="2" CornerRadius="0,14,14,0">
+            <StackPanel VerticalAlignment="Stretch">
+
+                <!-- Logo e Título -->
+                <StackPanel HorizontalAlignment="Center" Margin="0,0,0,24">
+                    
+                    <TextBlock Text="Organizador de Arquivos" 
+                               FontWeight="Bold" FontSize="14" 
+                               Foreground="White" TextAlignment="Center"/>
+                    <TextBlock Text="One Engenharia LTDA"
+                               FontSize="12" Foreground="#B8E0F8"
+                               TextAlignment="Center"/>
+                </StackPanel>
+
+                <!-- (Sem botões extras não usados) -->
+
+                <!-- Informações de Suporte -->
+                <StackPanel Margin="0,0,0,20">
+                    <Separator Margin="0,4"/>
+                    <TextBlock Text="suporte@oneengenharia.com" 
+                               Foreground="#EEF6FB" FontSize="12" Margin="0,8,0,0"/>
+                    <!-- Labels opcionais; não têm handlers -->
+                    <TextBlock x:Name="LblVersao"
+                               Foreground="White" FontSize="11" FontStyle="Italic"/>
+                </StackPanel>
+
+                <!-- Rodapé lateral -->
+                <StackPanel VerticalAlignment="Bottom" Margin="0,16,0,0">
+                    <TextBlock Text="© 2025 One Engenharia"
+                               Foreground="#B8E0F8" FontSize="11"/>
+                    <TextBlock x:Name="LblUsuario" 
+                               Foreground="White" FontStyle="Italic" FontSize="10" 
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+
+        <!-- Conteúdo -->
+        <ScrollViewer Grid.Row="0" Grid.Column="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+
+                <!-- ——— Card Configuração ——— -->
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Pasta de origem -->
+                        <Grid Grid.Row="0" Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Pasta de Origem" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="#34495e"/>
+                                <TextBox x:Name="txtOrigem"
+                                         Style="{StaticResource BottomBorderTextBox}"
+                                         Height="34" FontSize="15" Margin="0,4,0,0" MinWidth="260"
+                                         IsReadOnly="True"/>
+                            </StackPanel>
+
+                            <Button x:Name="btnSelecionarOrigem" Grid.Column="1" Content="Selecionar"
+                                    Style="{StaticResource PrimaryButton}" Width="110" Height="34"
+                                    Margin="12,20,0,0" Click="btnSelecionarOrigem_Click"/>
+                        </Grid>
+
+                        <!-- Nº OS / UF / Processar -->
+                        <Grid Grid.Row="1" Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Margin="0,0,18,0">
+                                <TextBlock Text="Nº OS" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="#34495e"/>
+                                <TextBox x:Name="txtNumos"
+                                         Style="{StaticResource BottomBorderTextBox}"
+                                         Height="34" FontSize="20" Margin="0,4,0,0"
+                                         FontWeight="Bold"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="UF" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="#34495e"/>
+                                <Border BorderBrush="#007ACC" BorderThickness="0,0,0,2"
+                                        CornerRadius="0,0,4,4" Margin="0,4,0,0" Width="69">
+                                    <ComboBox x:Name="cboUf"
+                                              Background="Transparent" BorderThickness="0"
+                                              Padding="8" Height="34" Width="70" FontSize="15"
+                                              SelectedIndex="0">
+                                        <ComboBoxItem Content="AC"/>
+                                        <ComboBoxItem Content="MT"/>
+                                    </ComboBox>
+                                </Border>
+                            </StackPanel>
+
+                            <Button x:Name="btnProcessar" Grid.Column="2" Content="Processar"
+                                    Style="{StaticResource ProcessarButton}"
+                                    Width="120" Height="38" Margin="14,20,0,0"
+                                    Click="btnProcessar_Click" IsDefault="True"/>
+                        </Grid>
+
+                        <!-- Abrir destino -->
+                        <Button x:Name="btnAbrirPasta" Grid.Row="2" Content="Abrir Pasta Destino"
+                                Style="{StaticResource DangerButton}"
+                                Width="170" Height="38" HorizontalAlignment="Left"
+                                Click="btnAbrirPasta_Click" Visibility="Collapsed"/>
+
+                        <!-- Progress -->
+                        <Grid Grid.Row="3" Margin="0,16,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar x:Name="progress" Grid.Column="0" Height="18"
+                                         IsIndeterminate="false" Visibility="Collapsed" Value="0"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- ——— Card Log ——— -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Log de Operações" FontWeight="Bold" FontSize="16"
+                                   Margin="0,0,0,12"/>
+                        <DataGrid x:Name="GridLog"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  RowStyle="{StaticResource LogRowStyle}"
+                                  GridLinesVisibility="None"
+                                  HeadersVisibility="Column"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  FontSize="12" CanUserResizeRows="False"
+                                  MinHeight="200" MaxHeight="350">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="Hora" Width="110">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Text="{Binding Hora, StringFormat=HH:mm:ss}"
+                                                     Style="{StaticResource CellCenterSelectable}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Tipo" Width="87">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Text="{Binding Tipo}"
+                                                     Style="{StaticResource CellCenterSelectable}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="" Width="40">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Text="{Binding Emoji}"
+                                                     Style="{StaticResource CellCenterSelectable}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Mensagem" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Text="{Binding Mensagem}"
+                                                     Style="{StaticResource CellCenterSelectable}"
+                                                     TextAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <!-- TextBox oculto para compatibilidade com txtLog.AppendText(...) -->
+                        <TextBox x:Name="txtLog" Visibility="Collapsed"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Rodapé -->
+        <DockPanel Grid.Row="1" Grid.Column="1" Margin="24,0,24,8"
+                   LastChildFill="False" Background="#f1f5f8" Height="38">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                        DockPanel.Dock="Left">
+                <Button x:Name="btnExecutar" Content="Sincronizar Tudo"
+                        Style="{StaticResource PrimaryButton}" Height="33"
+                        Click="btnExecutar_Click"/>
+                <TextBlock x:Name="txtStatus" FontWeight="Bold" FontSize="12"
+                           VerticalAlignment="Center" Margin="8,0,14,0"/>
+                <TextBlock x:Name="txtResumo" FontSize="12" Foreground="#3a558a"
+                           VerticalAlignment="Center" Margin="10,0,0,0"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,80 @@
+<Window x:Class="leituraWPF.FallbackWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Definir dados manualmente"
+        Width="520" Height="421"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="#FAFAFE">
+	<Window.Resources>
+		<Style x:Key="PrimaryButton" TargetType="Button">
+			<Setter Property="Background" Value="#007ACC"/>
+			<Setter Property="Foreground" Value="White"/>
+			<Setter Property="Padding" Value="10,6"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+		<Style x:Key="HText" TargetType="TextBlock">
+			<Setter Property="FontSize" Value="13"/>
+			<Setter Property="Foreground" Value="#34495e"/>
+			<Setter Property="Margin" Value="0,8,0,2"/>
+		</Style>
+		<Style x:Key="UnderlineTextBox" TargetType="TextBox">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="#007ACC"/>
+			<Setter Property="BorderThickness" Value="0,0,0,2"/>
+			<Setter Property="Padding" Value="8,5"/>
+			<Setter Property="FontSize" Value="15"/>
+		</Style>
+	</Window.Resources>
+
+	<Grid Margin="18">
+		<Grid.RowDefinitions>
+			<RowDefinition/>
+			<RowDefinition Height="Auto"/>
+		</Grid.RowDefinitions>
+
+		<!-- Conteúdo -->
+		<StackPanel>
+			<TextBlock Text="OS completa (somente leitura)" Style="{StaticResource HText}"/>
+			<TextBox x:Name="TxtOSFull" IsReadOnly="True" Style="{StaticResource UnderlineTextBox}"/>
+
+			<TextBlock Text="ID SIGFI" Style="{StaticResource HText}"/>
+			<TextBox x:Name="TxtIdSigfi" Style="{StaticResource UnderlineTextBox}"
+                     TextChanged="TxtIdSigfi_TextChanged"/>
+
+			<TextBlock Text="Rota" Style="{StaticResource HText}"/>
+			<ComboBox x:Name="CmbRota" Height="34" Margin="0,2,0,0" SelectionChanged="CmbRota_Changed"/>
+
+			<CheckBox x:Name="Chk160" Content="Sistema SIGFI 160?" Margin="0,12,0,0"
+                      Checked="Chk160_Checked" Unchecked="Chk160_Checked"/>
+
+			<Border Margin="0,12,0,0" Background="#f4f7fa" Padding="10" CornerRadius="6">
+				<StackPanel>
+					<TextBlock Text="Cliente" Style="{StaticResource HText}" Margin="0,0,0,6"/>
+					<Label x:Name="LblCliente" Content="Digite o ID SIGFI para buscar…" />
+				</StackPanel>
+			</Border>
+
+			<!-- Progresso de renomeação -->
+			<StackPanel Margin="0,14,0,0" Visibility="Collapsed" x:Name="RenBox">
+				<TextBlock Text="Renomeando arquivos…" />
+				<Grid Margin="0,6,0,0">
+					<Grid.ColumnDefinitions>
+						<ColumnDefinition/>
+						<ColumnDefinition Width="Auto"/>
+					</Grid.ColumnDefinitions>
+					<ProgressBar x:Name="RenProgress" Height="14" Grid.Column="0" Minimum="0" Maximum="100"/>
+					<TextBlock x:Name="RenPercent" Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center"/>
+				</Grid>
+			</StackPanel>
+		</StackPanel>
+
+		<!-- Rodapé -->
+		<StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+			<Button x:Name="BtnCancel" Content="Cancelar" Margin="0,0,8,0" Click="Cancel_Click"/>
+			<Button x:Name="BtnOk" Content="OK" Style="{StaticResource PrimaryButton}" Click="Ok_Click"/>
+		</StackPanel>
+	</Grid>
+</Window>

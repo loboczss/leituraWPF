@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<UseWPF>true</UseWPF>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<AssemblyName>leituraWPF</AssemblyName>
+
+		<!-- Escolhe Program.Main como ponto de entrada -->
+		<StartupObject>leituraWPF.Program</StartupObject>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Graph" Version="5.90.0" />
+		<PackageReference Include="Microsoft.Identity.Client" Version="4.63.0" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />		
+		<PackageReference Include="Ookii.Dialogs.Wpf" Version="5.0.1" />
+
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="appsettings.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+</Project>
