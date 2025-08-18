@@ -77,6 +77,7 @@ namespace leituraWPF
                 {
                     var files = Directory.EnumerateFiles(_downloadsDir, "*.json")
                         .Where(f => !Path.GetFileName(f).StartsWith("Instalacao_", StringComparison.OrdinalIgnoreCase))
+                        .Where(f => !Path.GetFileName(f).Equals(".index.json", StringComparison.OrdinalIgnoreCase))
                         .ToList();
 
                     var all = new List<ClientRecord>();
