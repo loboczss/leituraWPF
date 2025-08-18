@@ -22,6 +22,8 @@ namespace leituraWPF.Services
 
         public string LastDestination { get; private set; } = string.Empty;
 
+        public event Action<string>? FileReadyForBackup;
+
         private static string Sanitize(string s) =>
             string.IsNullOrWhiteSpace(s) ? string.Empty : string.Concat(s.Split(InvalidFileChars, StringSplitOptions.RemoveEmptyEntries));
 
@@ -120,6 +122,7 @@ namespace leituraWPF.Services
                     var ext = Path.GetExtension(src);
                     var dst = Path.Combine(destino, Sanitize($"{nomeBase}{suf}{ext}"));
                     if (SameVolume(src, dst)) MoveOverwrite(src, dst); else { File.Copy(src, dst, true); File.Delete(src); }
+                    try { FileReadyForBackup?.Invoke(dst); } catch { /* ignore */ }
                     Step();
                 }
 

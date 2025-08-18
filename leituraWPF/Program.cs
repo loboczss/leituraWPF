@@ -46,6 +46,13 @@ namespace leituraWPF
         public int HttpTimeoutSeconds { get; set; } = 120;   // timeout por request
         public bool SkipUnchanged { get; set; } = true;  // pular arquivos com mesma ETag
         public bool ForceDriveSearch { get; set; } = true;
+
+        // Configurações de backup contínuo
+        public string BackupSiteId { get; set; } = string.Empty;
+        public string BackupDriveId { get; set; } = string.Empty; // opcional
+        public string BackupListId { get; set; } = string.Empty;  // opcional
+        public string BackupFolder { get; set; } = "LogsRenomeacao";
+        public int BackupPollSeconds { get; set; } = 30;
     }
 
 }

@@ -363,7 +363,7 @@
 
         <!-- Rodapé -->
         <DockPanel Grid.Row="1" Grid.Column="1" Margin="24,0,24,8"
-                   LastChildFill="False" Background="#f1f5f8" Height="38">
+                   LastChildFill="False" Background="#f1f5f8" Height="60">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
                         DockPanel.Dock="Left">
                 <Button x:Name="btnExecutar" Content="Sincronizar Tudo"
@@ -372,6 +372,19 @@
                 <TextBlock x:Name="txtStatus" FontWeight="Bold" FontSize="12"
                            VerticalAlignment="Center" Margin="8,0,14,0"/>
                 <TextBlock x:Name="txtResumo" FontSize="12" Foreground="#3a558a"
+                           VerticalAlignment="Center" Margin="10,0,0,0"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                        DockPanel.Dock="Right">
+                <Button x:Name="BtnSyncAll" Content="Enviar Backups"
+                        Style="{StaticResource PrimaryButton}" Height="33"
+                        Click="BtnSyncAll_Click"/>
+                <ProgressBar x:Name="UploadBar" Width="90" Height="16" Margin="8,0,0,0"
+                             Visibility="Collapsed" IsIndeterminate="False"/>
+                <TextBlock x:Name="TxtSyncStatus" FontWeight="Bold" FontSize="12"
+                           VerticalAlignment="Center" Margin="8,0,14,0"/>
+                <TextBlock x:Name="TxtLastUpdate" FontSize="12" Foreground="#3a558a"
                            VerticalAlignment="Center" Margin="10,0,0,0"/>
             </StackPanel>
         </DockPanel>
