@@ -181,7 +181,7 @@ namespace leituraWPF.Services
                 if (!Directory.Exists(sourceFolder) || !Directory.EnumerateFiles(sourceFolder).Any())
                 {
                     // Mostra alerta visual sem travar o programa
-                    MessageBox.Show(
+                    System.Windows.MessageBox.Show(
                         "A pasta de origem não contém arquivos. Selecione arquivos para continuar.",
                         "Aviso",
                         MessageBoxButton.OK,
@@ -201,7 +201,7 @@ namespace leituraWPF.Services
                 // 3) Verifica destino já existente antes de criar
                 if (Directory.Exists(clienteDir) && Directory.EnumerateFileSystemEntries(clienteDir).Any())
                 {
-                    MessageBox.Show("A pasta de destino já contém arquivos.",
+                    System.Windows.MessageBox.Show("A pasta de destino já contém arquivos.",
                                     "Destino Não Vazio",
                                     MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;

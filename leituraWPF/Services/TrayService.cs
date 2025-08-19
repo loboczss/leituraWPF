@@ -25,7 +25,7 @@ namespace leituraWPF.Services
             var menu = new ContextMenuStrip();
             menu.Items.Add("Abrir o aplicativo", null, (s, e) => _showWindow());
             menu.Items.Add("Iniciar sincronização manual", null, (s, e) => _sync());
-            menu.Items.Add("Fechar o aplicativo", null, (s, e) => Application.Current?.Shutdown());
+            menu.Items.Add("Fechar o aplicativo", null, (s, e) => System.Windows.Application.Current?.Shutdown());
             _notifyIcon.ContextMenuStrip = menu;
             _notifyIcon.DoubleClick += (s, e) => _showWindow();
         }
