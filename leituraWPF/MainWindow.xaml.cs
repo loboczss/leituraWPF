@@ -332,29 +332,46 @@ namespace leituraWPF
         /* ---- Handlers ---- */
         private void btnSelecionarOrigem_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new VistaFolderBrowserDialog
+            btnSelecionarOrigem.IsEnabled = false;
+            try
             {
-                Description = "Escolha a pasta com os arquivos crus (con/c0n, inv, bat, imagens...)",
-                UseDescriptionForTitle = true,
-                ShowNewFolderButton = false,
-                Multiselect = false
-            };
+                var dlg = new VistaFolderBrowserDialog
+                {
+                    Description = "Escolha a pasta com os arquivos crus (con/c0n, inv, bat, imagens...)",
+                    UseDescriptionForTitle = true,
+                    ShowNewFolderButton = false,
+                    Multiselect = false
+                };
 
-            if (dlg.ShowDialog(this) == true)
+                if (dlg.ShowDialog(this) == true)
+                {
+                    _sourceFolderPath = dlg.SelectedPath;
+                    txtOrigem.Text = _sourceFolderPath;
+                    SetStatus("Origem definida.");
+                }
+            }
+            finally
             {
-                _sourceFolderPath = dlg.SelectedPath;
-                txtOrigem.Text = _sourceFolderPath;
-                SetStatus("Origem definida.");
+                btnSelecionarOrigem.IsEnabled = true;
             }
         }
 
         private async void btnExecutar_Click(object sender, RoutedEventArgs e)
         {
-            await SyncAndBackupAsync();
+            btnExecutar.IsEnabled = false;
+            try
+            {
+                await SyncAndBackupAsync();
+            }
+            finally
+            {
+                btnExecutar.IsEnabled = true;
+            }
         }
 
         private async void btnProcessar_Click(object sender, RoutedEventArgs e)
         {
+            btnProcessar.IsEnabled = false;
             try
             {
                 var uf = GetSelectedUf();
@@ -445,7 +462,6 @@ namespace leituraWPF
                 // Achou o record no cache → renomeia aqui mesmo (manutenção)
                 if (!await EnsureSourceFolderHasFilesAsync()) return;
 
-                btnProcessar.IsEnabled = false;
                 SetStatus("Processando manutenção...");
                 progress.IsIndeterminate = false;
                 progress.Value = 0;
@@ -481,6 +497,7 @@ namespace leituraWPF
 
         private void btnAbrirPasta_Click(object sender, RoutedEventArgs e)
         {
+            btnAbrirPasta.IsEnabled = false;
             try
             {
                 var destino = _installRenamer.LastDestination;
@@ -493,6 +510,10 @@ namespace leituraWPF
             catch (Exception ex)
             {
                 Log($"[WARN] Não foi possível abrir a pasta destino: {ex.Message}");
+            }
+            finally
+            {
+                btnAbrirPasta.IsEnabled = true;
             }
         }
 
