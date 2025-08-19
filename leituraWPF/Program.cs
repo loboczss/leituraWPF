@@ -108,7 +108,9 @@ namespace leituraWPF
                         if (!main.IsVisible) main.Show();
                         main.Activate();
                     }),
-                    sync: () => main.RunManualSync());
+
+                    sync: () => main.RunManualSync(),
+
 
                 app.Run(main);
                 // Ao sair do Run, 'using' garante Dispose do tray e do poller
