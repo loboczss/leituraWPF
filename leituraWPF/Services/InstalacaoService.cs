@@ -6,36 +6,32 @@ using System.Linq;
 namespace leituraWPF.Services
 {
     /// <summary>
-    /// Serviço enxuto para trabalhar com o arquivo local Instalacao_AC.json.
-    /// O download é feito externamente via GraphDownloader.
+    /// Serviço enxuto para trabalhar com os arquivos locais de instalação
+    /// (ex.: <c>Instalacao_AC.json</c>). O download é feito externamente via
+    /// <c>GraphDownloader</c>.
     /// </summary>
     public sealed class InstalacaoService
     {
-        public static string OfflinePath =>
-            Path.Combine(AppContext.BaseDirectory, "downloads", "Instalacao_AC.json");
-
-        private void GarantirArquivoLocal()
-        {
-            if (!File.Exists(OfflinePath))
-            {
-                throw new FileNotFoundException(
-                    "Instalacao_AC.json não encontrado. Sincronize primeiro (Sincronizar Tudo) ou tente novamente o fluxo de instalação.");
-            }
-        }
+        private static string BuildPath(string uf) =>
+            Path.Combine(AppContext.BaseDirectory, "downloads", $"Instalacao_{uf}.json");
 
         /// <summary>
-        /// Busca no Instalacao_AC.json por IDSERVICOSCONJ == idSigfi.
-        /// Retorna NomeCliente e Rota, se encontrado.
+        /// Busca no arquivo <c>Instalacao_{uf}.json</c> pelo
+        /// <paramref name="idSigfi"/>. Retorna Nome do Cliente e Rota, se
+        /// encontrado; caso contrário retorna <c>null</c>.
         /// </summary>
-        public (string NomeCliente, string Rota)? BuscarPorIdSigfi(string idSigfi)
+        public (string NomeCliente, string Rota)? BuscarPorIdSigfi(string uf, string idSigfi)
         {
-            if (string.IsNullOrWhiteSpace(idSigfi)) return null;
+            if (string.IsNullOrWhiteSpace(idSigfi) || string.IsNullOrWhiteSpace(uf))
+                return null;
 
-            GarantirArquivoLocal();
+            string path = BuildPath(uf);
+            if (!File.Exists(path))
+                return null;
 
             try
             {
-                var json = File.ReadAllText(OfflinePath);
+                var json = File.ReadAllText(path);
                 var root = JObject.Parse(json);
                 var arr = root["instalacoes"] as JArray;
                 if (arr == null) return null;
