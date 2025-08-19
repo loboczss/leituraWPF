@@ -41,6 +41,7 @@ namespace leituraWPF
         private readonly SemaphoreSlim _syncMutex = new(1, 1);
         private readonly PeriodicTimer _autoSyncTimer = new(TimeSpan.FromMinutes(10));
         private readonly CancellationTokenSource _cts = new();
+        private bool _suppressLogs = false;
 
         public MainWindow(Funcionario? funcionario = null)
         {
@@ -67,7 +68,12 @@ namespace leituraWPF
             _renamer.FileReadyForBackup += async p => await _backup.EnqueueAsync(p);
             _installRenamer.FileReadyForBackup += async p => await _backup.EnqueueAsync(p);
 
-            _backup.StatusChanged += msg => Log($"[BACKUP] {msg}");
+            _backup.StatusChanged += msg =>
+            {
+                var up = msg.ToUpperInvariant();
+                if (up.Contains("FALHA") || up.Contains("ERRO") || up.Contains("INDISPONÍVEL"))
+                    Log(msg, true);
+            };
             _backup.FileUploaded += (local, remote, bytes) =>
             {
                 Log($"[UPL] {Path.GetFileName(local)} → {remote} ({bytes:n0} bytes)");
@@ -99,7 +105,7 @@ namespace leituraWPF
                 {
                     while (await _autoSyncTimer.WaitForNextTickAsync(_cts.Token))
                     {
-                        await SyncAndBackupAsync();
+                        await SyncAndBackupAsync(silent: true);
                     }
                 }
                 catch (OperationCanceledException) { /* janela fechando: ok */ }
@@ -129,9 +135,10 @@ namespace leituraWPF
             _ = SyncAndBackupAsync();
         }
 
-        private async Task SyncAndBackupAsync()
+        private async Task SyncAndBackupAsync(bool silent = false)
         {
             if (!await _syncMutex.WaitAsync(0)) return;
+            _suppressLogs = silent;
             try
             {
                 await Dispatcher.InvokeAsync(() => btnExecutar.IsEnabled = false);
@@ -155,7 +162,8 @@ namespace leituraWPF
                     SetStatus($"Download finalizado. {downloaded.Count} arquivo(s).");
                     SetStatus("Atualizando cache local (manutenção)...");
                     await EnsureLocalCacheAsync(forceReload: true);
-                    Log("[OK] Sincronização concluída.");
+                    if (!silent)
+                        Log("[OK] Sincronização concluída.");
 
                     await Dispatcher.InvokeAsync(() =>
                     {
@@ -164,6 +172,8 @@ namespace leituraWPF
                         UploadBar.IsIndeterminate = true;
                     });
                     await _backup.ForceRunOnceAsync();
+                    if (silent)
+                        Log($"[INFO] Última atualização: {DateTime.Now:dd/MM HH:mm}", force: true);
                 }
                 catch (Exception ex)
                 {
@@ -185,6 +195,7 @@ namespace leituraWPF
                 Report(100);
                 await Dispatcher.InvokeAsync(() => btnExecutar.IsEnabled = true);
                 _syncMutex.Release();
+                _suppressLogs = false;
             }
         }
 
@@ -555,8 +566,11 @@ namespace leituraWPF
         }
 
         /* ---- Logging ---- */
-        public void Log(string message)
+        public void Log(string message) => Log(message, false);
+
+        public void Log(string message, bool force)
         {
+            if (_suppressLogs && !force) return;
             string tipo = "INFO"; string emoji = "ℹ️";
             var up = (message ?? "").ToUpperInvariant();
             if (up.Contains("[FATAL]")) { tipo = "CRITICAL"; emoji = "🛑"; }
