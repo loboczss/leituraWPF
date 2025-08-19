@@ -368,15 +368,12 @@ namespace leituraWPF
                     return;
                 }
 
-                // ===== FLUXO 0 → INSTALAÇÃO: ler APENAS arquivo de instalação e baixar conforme necessário =====
+                // ===== FLUXO 0 → INSTALAÇÃO: ler APENAS arquivo de instalação local (sem baixar) =====
                 if (raw == "0")
                 {
-                    SetStatus("Atualizando arquivo de instalação...");
+                    SetStatus("Lendo arquivo de instalação local...");
                     progress.Visibility = Visibility.Visible;
                     progress.IsIndeterminate = true;
-
-                    // Baixa/atualiza SOMENTE “Instalacao_{UF}”
-                    await _downloader.DownloadMatchingJsonAsync(_downloadsDir, extraQueries: new[] { $"Instalacao_{uf}" });
 
                     // Lê as ROTAS direto do(s) arquivo(s) de instalação (sem tocar no cache de manutenção)
                     var rotasInstalacao = await LoadRotasFromInstallationAsync(uf);
