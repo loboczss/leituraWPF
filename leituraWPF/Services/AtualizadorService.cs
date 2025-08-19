@@ -29,6 +29,7 @@ namespace leituraWPF.Services
 
         /// <summary>
         /// Retorna (versão local, versão remota).
+        /// Mantido por compatibilidade.
         /// </summary>
         public async Task<(Version LocalVersion, Version RemoteVersion)> GetVersionsAsync()
         {
@@ -80,6 +81,59 @@ namespace leituraWPF.Services
         }
 
         /// <summary>
+        /// Igual ao GetVersionsAsync, mas também indica se a consulta remota funcionou.
+        /// Se RemoteFetchOk == false, significa offline/erro ao falar com o GitHub.
+        /// </summary>
+        public async Task<(Version LocalVersion, Version RemoteVersion, bool RemoteFetchOk)> GetVersionsWithStatusAsync()
+        {
+            Version localVer = new Version(0, 0, 0, 0);
+
+            // versão local
+            try
+            {
+                localVer = Assembly.GetExecutingAssembly().GetName().Version ?? localVer;
+            }
+            catch
+            {
+                var dllPath = Path.Combine(InstallDir, $"{AppProductName}.dll");
+                var exePath = Path.Combine(InstallDir, AppExeName);
+                string asmPath = File.Exists(dllPath) ? dllPath : exePath;
+                if (File.Exists(asmPath))
+                {
+                    try
+                    {
+                        localVer = AssemblyName.GetAssemblyName(asmPath).Version;
+                    }
+                    catch (BadImageFormatException) { }
+                }
+            }
+
+            // versão remota + status
+            Version remoteVer = localVer;
+            bool ok = false;
+            try
+            {
+                using var http = CreateHttp();
+                var json = await http.GetStringAsync(ApiUrl).ConfigureAwait(false);
+                var obj = JObject.Parse(json);
+
+                var tagRaw = (obj["tag_name"]?.ToString() ?? string.Empty).Trim();
+                var parsed = ParseVersionFromTag(tagRaw);
+                if (parsed != null)
+                {
+                    remoteVer = parsed;
+                    ok = true;
+                }
+            }
+            catch
+            {
+                ok = false; // offline/erro
+            }
+
+            return (localVer, remoteVer, ok);
+        }
+
+        /// <summary>
         /// Faz download do primeiro asset .zip do release mais recente.
         /// Retorna o caminho temporário do zip salvo; ou null se não houver.
         /// </summary>
@@ -94,8 +148,6 @@ namespace leituraWPF.Services
                 return null;
 
             // Escolha do asset:
-            // 1) Se preferNameContains foi informado, tenta casar com .zip
-            // 2) Senão, pega o primeiro .zip
             JToken? asset = null;
 
             if (!string.IsNullOrWhiteSpace(preferNameContains))
@@ -134,14 +186,7 @@ namespace leituraWPF.Services
         }
 
         /// <summary>
-        /// Gera um .bat que:
-        /// - aguarda o fechamento do leituraWPF.exe
-        /// - extrai o ZIP para uma pasta temporária
-        /// - copia os arquivos para o diretório de instalação
-        /// - recria atalho na área de trabalho
-        /// - remove temporários
-        /// - relança o leituraWPF.exe
-        /// Retorna o caminho do .bat gerado.
+        /// Gera o .bat de atualização (mesmo conteúdo que você já usa).
         /// </summary>
         public string CreateUpdateBatch(string zipPath)
         {
@@ -213,31 +258,21 @@ namespace leituraWPF.Services
             return batchPath;
         }
 
-
-        /// <summary>
-        /// Helper: cria HttpClient com User-Agent e timeout decente.
-        /// </summary>
         private static HttpClient CreateHttp()
         {
             var http = new HttpClient
             {
                 Timeout = TimeSpan.FromSeconds(45)
             };
-            // GitHub API exige User-Agent
             http.DefaultRequestHeaders.Add("User-Agent", AppProductName);
-            // Opcional: aceitar JSON
             http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
             return http;
         }
 
-        /// <summary>
-        /// Converte "v1.2.3" ou "1.2.3" em Version. Ignora sufixos (ex.: -beta).
-        /// </summary>
         private static Version? ParseVersionFromTag(string tagName)
         {
             if (string.IsNullOrWhiteSpace(tagName)) return null;
 
-            // remove 'v' inicial e corta até caracteres não numéricos/ponto
             var trimmed = new string(tagName.Trim()
                                       .TrimStart('v', 'V')
                                       .TakeWhile(c => char.IsDigit(c) || c == '.')
