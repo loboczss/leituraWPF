@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 
 // Aliases para tirar ambiguidade de Application/Window
@@ -25,13 +26,21 @@ namespace leituraWPF
             using var mutex = new Mutex(true, "leituraWPF_SINGLE_INSTANCE", out bool created);
             if (!created)
             {
-                var current = Process.GetCurrentProcess();
-                var other = Process.GetProcessesByName(current.ProcessName)
-                                    .FirstOrDefault(p => p.Id != current.Id);
-                if (other != null)
+                try
                 {
-                    NativeMethods.ShowWindow(other.MainWindowHandle, NativeMethods.SW_RESTORE);
-                    NativeMethods.SetForegroundWindow(other.MainWindowHandle);
+                    using var evt = EventWaitHandle.OpenExisting("leituraWPF_SHOW_EVENT");
+                    evt.Set();
+                }
+                catch (WaitHandleCannotBeOpenedException)
+                {
+                    var current = Process.GetCurrentProcess();
+                    var other = Process.GetProcessesByName(current.ProcessName)
+                                        .FirstOrDefault(p => p.Id != current.Id);
+                    if (other != null)
+                    {
+                        NativeMethods.ShowWindow(other.MainWindowHandle, NativeMethods.SW_RESTORE);
+                        NativeMethods.SetForegroundWindow(other.MainWindowHandle);
+                    }
                 }
                 return;
             }
@@ -101,13 +110,27 @@ namespace leituraWPF
 
                 var main = new MainWindow(login.FuncionarioLogado);
 
-                using var tray = new TrayService(
-                    showWindow: () => app.Dispatcher.Invoke(() =>
+                void ShowMainWindow()
+                {
+                    app.Dispatcher.Invoke(() =>
                     {
                         if (main.WindowState == WindowState.Minimized) main.WindowState = WindowState.Normal;
                         if (!main.IsVisible) main.Show();
                         main.Activate();
-                    }),
+                    });
+                }
+
+                using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "leituraWPF_SHOW_EVENT");
+                _ = Task.Run(() =>
+                {
+                    while (showEvent.WaitOne())
+                    {
+                        ShowMainWindow();
+                    }
+                });
+
+                using var tray = new TrayService(
+                    showWindow: ShowMainWindow,
                     sync: () => main.RunManualSync(),
                     exit: () => app.Dispatcher.Invoke(() => main.ForceClose()));
 
