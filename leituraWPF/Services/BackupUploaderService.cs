@@ -90,7 +90,7 @@ namespace leituraWPF.Services
             _timer = null;
         }
 
-        public async Task EnqueueAsync(string filePath)
+        private void EnqueueFile(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return;
 
@@ -98,7 +98,7 @@ namespace leituraWPF.Services
             var folder = Path.GetFileName(Path.GetDirectoryName(filePath)) ?? string.Empty;
             var dst = Path.Combine(_pendingDir, folder, name);
             var sentCandidate = Path.Combine(_sentDir, folder, name);
-            if (File.Exists(sentCandidate)) return; // já enviado
+            if (File.Exists(sentCandidate) || File.Exists(dst)) return; // já enviado ou já pendente
 
             try
             {
@@ -106,6 +106,27 @@ namespace leituraWPF.Services
                 File.Copy(filePath, dst, true);
             }
             catch { /* ignore */ }
+        }
+
+        public async Task EnqueueAsync(string filePath)
+        {
+            EnqueueFile(filePath);
+
+            PendingCount = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).Count();
+            CountersChanged?.Invoke(PendingCount, UploadedCountSession);
+        }
+
+        public void LoadPendingFromBaseDirs()
+        {
+            foreach (var dir in RenamerService.EnumerarPastasBase())
+            {
+                try
+                {
+                    foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                        EnqueueFile(file);
+                }
+                catch { /* ignore */ }
+            }
 
             PendingCount = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).Count();
             CountersChanged?.Invoke(PendingCount, UploadedCountSession);
