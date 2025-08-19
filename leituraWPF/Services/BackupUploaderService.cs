@@ -31,6 +31,7 @@ namespace leituraWPF.Services
 
         private PeriodicTimer? _timer;
         private readonly SemaphoreSlim _mutex = new(1, 1);
+        private readonly HashSet<string> _ensured = new(StringComparer.OrdinalIgnoreCase);
 
         public int PendingCount { get; private set; }
         public long UploadedCountSession { get; private set; }
@@ -85,16 +86,19 @@ namespace leituraWPF.Services
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return;
 
             var name = Path.GetFileName(filePath);
-            var dst = Path.Combine(_pendingDir, name);
-            if (File.Exists(Path.Combine(_sentDir, name))) return; // já enviado
+            var folder = Path.GetFileName(Path.GetDirectoryName(filePath)) ?? string.Empty;
+            var dst = Path.Combine(_pendingDir, folder, name);
+            var sentCandidate = Path.Combine(_sentDir, folder, name);
+            if (File.Exists(sentCandidate)) return; // já enviado
 
             try
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
                 File.Copy(filePath, dst, true);
             }
             catch { /* ignore */ }
 
-            PendingCount = Directory.EnumerateFiles(_pendingDir).Count();
+            PendingCount = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).Count();
             CountersChanged?.Invoke(PendingCount, UploadedCountSession);
         }
 
@@ -105,7 +109,7 @@ namespace leituraWPF.Services
             if (!await _mutex.WaitAsync(0, ct)) return; // já em execução
             try
             {
-                PendingCount = Directory.EnumerateFiles(_pendingDir).Count();
+                PendingCount = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).Count();
                 StatusChanged?.Invoke($"ciclo iniciado ({PendingCount} pendentes)");
 
                 string token;
@@ -130,22 +134,27 @@ namespace leituraWPF.Services
                     return;
                 }
 
-                await EnsureFolderAsync(driveId, ct);
-                var files = Directory.EnumerateFiles(_pendingDir).ToList();
+                await EnsureFolderAsync(driveId, _cfg.BackupFolder, ct);
+                var files = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).ToList();
                 foreach (var file in files)
                 {
                     ct.ThrowIfCancellationRequested();
                     var name = Path.GetFileName(file);
                     var size = new FileInfo(file).Length;
-                    var remote = $"/{_cfg.BackupFolder}/{name}";
+                    var rel = Path.GetRelativePath(_pendingDir, file);
+                    var sub = Path.GetDirectoryName(rel)?.Replace('\\', '/') ?? string.Empty;
+                    var remoteFolder = string.IsNullOrEmpty(sub) ? _cfg.BackupFolder : $"{_cfg.BackupFolder}/{sub}";
+                    await EnsureFolderAsync(driveId, remoteFolder, ct);
+                    var remote = $"/{remoteFolder}/{name}";
                     try
                     {
                         if (size <= 4 * 1024 * 1024)
-                            await UploadSmallAsync(driveId, name, file, ct);
+                            await UploadSmallAsync(driveId, remoteFolder, name, file, ct);
                         else
-                            await UploadLargeAsync(driveId, name, file, size, ct);
+                            await UploadLargeAsync(driveId, remoteFolder, name, file, size, ct);
 
-                        var dst = Path.Combine(_sentDir, name);
+                        var dst = Path.Combine(_sentDir, rel);
+                        Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
                         if (File.Exists(dst)) File.Delete(dst);
                         File.Move(file, dst);
 
@@ -193,30 +202,41 @@ namespace leituraWPF.Services
             }
         }
 
-        private async Task EnsureFolderAsync(string driveId, CancellationToken ct)
+        private async Task EnsureFolderAsync(string driveId, string folder, CancellationToken ct)
         {
-            var folder = string.IsNullOrWhiteSpace(_cfg.BackupFolder) ? "LogsRenomeacao" : _cfg.BackupFolder;
-            var getUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(folder)}";
-            using var resp = await _http.GetAsync(getUrl, ct);
-            if (resp.StatusCode == HttpStatusCode.NotFound)
+            if (string.IsNullOrWhiteSpace(folder) || _ensured.Contains(folder)) return;
+
+            var segments = folder.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+            string current = string.Empty;
+            foreach (var seg in segments)
             {
-                var createUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root/children";
-                // >>> correção: usar JsonObject para suportar a chave "@microsoft.graph.conflictBehavior"
-                var body = new JsonObject
+                current = string.IsNullOrEmpty(current) ? seg : $"{current}/{seg}";
+                if (_ensured.Contains(current)) continue;
+
+                var getUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(current)}";
+                using var resp = await _http.GetAsync(getUrl, ct);
+                if (resp.StatusCode == HttpStatusCode.NotFound)
                 {
-                    ["name"] = folder,
-                    ["folder"] = new JsonObject(),
-                    ["@microsoft.graph.conflictBehavior"] = "replace"
-                };
-                using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
-                using var resp2 = await _http.PostAsync(createUrl, content, ct);
-                // 409 = já existe → ignora
+                    var parent = Path.GetDirectoryName(current)?.Replace('\\', '/') ?? string.Empty;
+                    var createUrl = string.IsNullOrEmpty(parent)
+                        ? $"https://graph.microsoft.com/v1.0/drives/{driveId}/root/children"
+                        : $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(parent)}:/children";
+                    var body = new JsonObject
+                    {
+                        ["name"] = seg,
+                        ["folder"] = new JsonObject(),
+                        ["@microsoft.graph.conflictBehavior"] = "replace"
+                    };
+                    using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+                    using var resp2 = await _http.PostAsync(createUrl, content, ct);
+                    // 409 = já existe → ignora
+                }
+                _ensured.Add(current);
             }
         }
 
-        private async Task UploadSmallAsync(string driveId, string name, string path, CancellationToken ct)
+        private async Task UploadSmallAsync(string driveId, string folder, string name, string path, CancellationToken ct)
         {
-            var folder = string.IsNullOrWhiteSpace(_cfg.BackupFolder) ? "LogsRenomeacao" : _cfg.BackupFolder;
             var url = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(folder)}/{Uri.EscapeDataString(name)}:/content?@microsoft.graph.conflictBehavior=replace";
             using var fs = File.OpenRead(path);
             using var content = new StreamContent(fs);
@@ -224,9 +244,8 @@ namespace leituraWPF.Services
             await EnsureSuccessAsync(resp, $"PUT {name}");
         }
 
-        private async Task UploadLargeAsync(string driveId, string name, string path, long size, CancellationToken ct)
+        private async Task UploadLargeAsync(string driveId, string folder, string name, string path, long size, CancellationToken ct)
         {
-            var folder = string.IsNullOrWhiteSpace(_cfg.BackupFolder) ? "LogsRenomeacao" : _cfg.BackupFolder;
             var createUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(folder)}/{Uri.EscapeDataString(name)}:/createUploadSession";
             // >>> correção: usar JsonObject aqui também
             var body = new JsonObject
