@@ -3,6 +3,7 @@ using leituraWPF.Services;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Animation;
@@ -15,7 +16,8 @@ namespace leituraWPF
 {
     public partial class LoginWindow : Window, INotifyPropertyChanged
     {
-        private readonly IDictionary<string, Funcionario> _funcionarios;
+        private readonly FuncionarioService _funcService;
+        private IDictionary<string, Funcionario> _funcionarios = new Dictionary<string, Funcionario>();
         private bool _isLoading;
         private string _statusMessage = string.Empty;
 
@@ -50,20 +52,66 @@ namespace leituraWPF
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public LoginWindow(IDictionary<string, Funcionario> funcionarios)
+        public LoginWindow(FuncionarioService funcService)
         {
             InitializeComponent();
-            _funcionarios = funcionarios ?? throw new ArgumentNullException(nameof(funcionarios));
+            _funcService = funcService ?? throw new ArgumentNullException(nameof(funcService));
             DataContext = this;
         }
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            BtnLogin.IsEnabled = false;
+            StatusMessage = "Carregando funcionários...";
+            var statusBorder = FindName("StatusBorder") as FrameworkElement;
+            if (statusBorder != null)
+                statusBorder.Visibility = Visibility.Visible;
+
+            await AnimateWindowEntrance();
+            await LoadFuncionariosAsync();
             await LoadStatsAsync();
             TxtMatricula.Focus();
+        }
 
-            // Animação de entrada suave
-            await AnimateWindowEntrance();
+        private async Task LoadFuncionariosAsync()
+        {
+            try
+            {
+                IsLoading = true;
+                BtnLogin.IsEnabled = false;
+
+                var baseDir = AppContext.BaseDirectory;
+                try
+                {
+                    await _funcService.DownloadCsvAsync(baseDir);
+                }
+                catch
+                {
+                    // ignorado: falha de rede
+                }
+
+                var csvPath = Path.Combine(baseDir, "funcionarios.csv");
+                if (!File.Exists(csvPath))
+                {
+                    MessageBox.Show("Arquivo de funcionários não disponível e não foi possível baixá-lo.",
+                                    "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
+                    Close();
+                    return;
+                }
+
+                _funcionarios = await _funcService.LoadFuncionariosAsync(csvPath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erro ao carregar funcionários: {ex.Message}",
+                                "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
+                Close();
+            }
+            finally
+            {
+                IsLoading = false;
+                BtnLogin.IsEnabled = true;
+            }
         }
 
         private async Task LoadStatsAsync()

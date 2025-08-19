@@ -316,6 +316,7 @@
             Content="Entrar"
             Style="{StaticResource PrimaryButton}"
             IsDefault="True"
+            IsEnabled="False"
             Click="BtnLogin_Click"/>
                 </StackPanel>
 

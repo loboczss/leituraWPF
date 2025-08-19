@@ -1,7 +1,6 @@
 using leituraWPF.Services;
 using leituraWPF.Utils;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -66,30 +65,9 @@ namespace leituraWPF
                 }) ?? new AppConfig();
             }
 
-            var baseDir = AppContext.BaseDirectory;
             var tokenService = new TokenService(Config);
             var funcService = new FuncionarioService(Config, tokenService);
-
-            try
-            {
-                // Tenta baixar o CSV antes de prosseguir
-                funcService.DownloadCsvAsync(baseDir).GetAwaiter().GetResult();
-            }
-            catch
-            {
-                // ignorado: falha de rede
-            }
-
-            var csvPath = Path.Combine(baseDir, "funcionarios.csv");
-            if (!File.Exists(csvPath))
-            {
-                System.Windows.MessageBox.Show("Arquivo de funcionários não disponível e não foi possível baixá-lo.",
-                                "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            var funcionarios = funcService.LoadFuncionariosAsync(csvPath).GetAwaiter().GetResult();
-            var login = new LoginWindow(funcionarios);
+            var login = new LoginWindow(funcService);
 
             // Cria a Application ANTES do ShowDialog (dispatcher ativo para o poller abrir janelas)
             var app = new App();
