@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -36,6 +37,8 @@ namespace leituraWPF
         private readonly ObservableCollection<LogEntry> _logItems = new();
         private List<ClientRecord> _cacheRecords = new();
         private readonly Funcionario? _funcionario;
+        private readonly SemaphoreSlim _syncMutex = new(1, 1);
+        private readonly PeriodicTimer _autoSyncTimer = new(TimeSpan.FromMinutes(10));
 
         public MainWindow(Funcionario? funcionario = null)
         {
@@ -86,13 +89,82 @@ namespace leituraWPF
 
             _backup.Start();
 
+            // inicia sincronização automática a cada 10 minutos
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (await _autoSyncTimer.WaitForNextTickAsync())
+                    {
+                        await SyncAndBackupAsync();
+                    }
+                }
+                catch { /* timer disposed */ }
+            });
+
             // No carregamento: checa atualização (com timeout) e prepara o cache local
             this.Loaded += MainWindow_Loaded;
         }
 
         public void RunManualSync()
         {
-            _ = _backup.ForceRunOnceAsync();
+            _ = SyncAndBackupAsync();
+        }
+
+        private async Task SyncAndBackupAsync()
+        {
+            if (!await _syncMutex.WaitAsync(0)) return;
+            try
+            {
+                await Dispatcher.InvokeAsync(() => btnExecutar.IsEnabled = false);
+                ClearLog();
+                SetStatus("Sincronizando com SharePoint...");
+                Report(0);
+
+                try
+                {
+                    var downloaded = await _downloader.DownloadMatchingJsonAsync(
+                        _downloadsDir,
+                        extraQueries: new[] { "Instalacao_AC" }
+                    );
+
+                    var stats = SyncStatsService.Load();
+                    stats.Downloaded += downloaded.Count;
+                    SyncStatsService.Save(stats);
+
+                    SetStatus($"Download finalizado. {downloaded.Count} arquivo(s).");
+                    SetStatus("Atualizando cache local (manutenção)...");
+                    await EnsureLocalCacheAsync(forceReload: true);
+                    Log("[OK] Sincronização concluída.");
+
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        TxtSyncStatus.Text = "Sincronizando...";
+                        UploadBar.Visibility = Visibility.Visible;
+                        UploadBar.IsIndeterminate = true;
+                    });
+                    await _backup.ForceRunOnceAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log($"[FATAL] {ex.Message}");
+                    SetStatus("Falha.");
+                }
+                finally
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        UploadBar.IsIndeterminate = false;
+                        UploadBar.Visibility = Visibility.Collapsed;
+                    });
+                }
+            }
+            finally
+            {
+                Report(100);
+                await Dispatcher.InvokeAsync(() => btnExecutar.IsEnabled = true);
+                _syncMutex.Release();
+            }
         }
 
         private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)
@@ -262,37 +334,7 @@ namespace leituraWPF
 
         private async void btnExecutar_Click(object sender, RoutedEventArgs e)
         {
-            btnExecutar.IsEnabled = false;
-            ClearLog();
-            SetStatus("Sincronizando com SharePoint...");
-            Report(0);
-
-            try
-            {
-                var downloaded = await _downloader.DownloadMatchingJsonAsync(
-                    _downloadsDir,
-                    extraQueries: new[] { "Instalacao_AC" } // baixa também instalação
-                );
-
-                var stats = SyncStatsService.Load();
-                stats.Downloaded += downloaded.Count;
-                SyncStatsService.Save(stats);
-
-                SetStatus($"Download finalizado. {downloaded.Count} arquivo(s).");
-                SetStatus("Atualizando cache local (manutenção)...");
-                await EnsureLocalCacheAsync(forceReload: true);
-                Log("[OK] Sincronização concluída.");
-            }
-            catch (Exception ex)
-            {
-                Log($"[FATAL] {ex.Message}");
-                SetStatus("Falha.");
-            }
-            finally
-            {
-                Report(100);
-                btnExecutar.IsEnabled = true;
-            }
+            await SyncAndBackupAsync();
         }
 
         private async void btnProcessar_Click(object sender, RoutedEventArgs e)
@@ -459,30 +501,6 @@ namespace leituraWPF
             {
                 btnProcessar_Click(sender, e);
                 e.Handled = true;
-            }
-        }
-
-        private async void BtnSyncAll_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                BtnSyncAll.IsEnabled = false;
-                UploadBar.Visibility = Visibility.Visible;
-                UploadBar.IsIndeterminate = true;
-                TxtSyncStatus.Text = "Sincronizando...";
-                await _backup.ForceRunOnceAsync();
-                TxtSyncStatus.Text = $"Pendentes: {_backup.PendingCount} | Enviados (sessão): {_backup.UploadedCountSession}";
-                TxtLastUpdate.Text = _backup.LastRunUtc is { } t ? $"Última sync: {t:dd/MM HH:mm}" : "Última sync: —";
-            }
-            catch (Exception ex)
-            {
-                Log($"[WARN] Sync manual falhou: {ex.Message}");
-            }
-            finally
-            {
-                UploadBar.IsIndeterminate = false;
-                UploadBar.Visibility = Visibility.Collapsed;
-                BtnSyncAll.IsEnabled = true;
             }
         }
 
