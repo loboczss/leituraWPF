@@ -194,18 +194,22 @@ namespace leituraWPF.Services
                 // 2) Estrutura de destino
                 string root = ResolveBaseDir(record.UF);
                 string rotaDir = CreateSafeDir(Path.Combine(root, Sanitize(record.Rota)));
-                string clienteDir = CreateSafeDir(Path.Combine(rotaDir,
-                    Sanitize($"{record.NumOS}_{record.IdSigfi}_{record.Tipo}")));
+                string clienteDir = Path.Combine(rotaDir,
+                    Sanitize($"{record.NumOS}_{record.IdSigfi}_{record.Tipo}"));
                 LastDestination = clienteDir;
 
-                // 3) Verifica destino vazio
-                if (Directory.Exists(clienteDir))
+                // 3) Verifica destino já existente antes de criar
+                if (Directory.Exists(clienteDir) && Directory.EnumerateFileSystemEntries(clienteDir).Any())
                 {
                     MessageBox.Show("A pasta de destino já contém arquivos.",
                                     "Destino Não Vazio",
                                     MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
+
+                // Só cria agora, se não existir
+                Directory.CreateDirectory(clienteDir);
+
 
                 Report(10);
 

@@ -110,7 +110,7 @@ namespace leituraWPF.Services
             try
             {
                 PendingCount = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).Count();
-                StatusChanged?.Invoke($"ciclo iniciado ({PendingCount} pendentes)");
+                StatusChanged?.Invoke($"[BACKUP] ciclo iniciado ({PendingCount} pendentes)");
 
                 string token;
                 try
@@ -119,7 +119,7 @@ namespace leituraWPF.Services
                 }
                 catch
                 {
-                    StatusChanged?.Invoke("offline/sem token");
+                    StatusChanged?.Invoke("[BACKUP] offline/sem token");
                     return;
                 }
 
@@ -130,12 +130,13 @@ namespace leituraWPF.Services
                 var driveId = await ResolveDriveIdAsync(ct);
                 if (string.IsNullOrEmpty(driveId))
                 {
-                    StatusChanged?.Invoke("driveId não resolvido");
+                    StatusChanged?.Invoke("[BACKUP] driveId não resolvido");
                     return;
                 }
 
                 await EnsureFolderAsync(driveId, _cfg.BackupFolder, ct);
                 var files = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).ToList();
+
                 foreach (var file in files)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -146,32 +147,53 @@ namespace leituraWPF.Services
                     var remoteFolder = string.IsNullOrEmpty(sub) ? _cfg.BackupFolder : $"{_cfg.BackupFolder}/{sub}";
                     await EnsureFolderAsync(driveId, remoteFolder, ct);
                     var remote = $"/{remoteFolder}/{name}";
-                    try
-                    {
-                        if (size <= 4 * 1024 * 1024)
-                            await UploadSmallAsync(driveId, remoteFolder, name, file, ct);
-                        else
-                            await UploadLargeAsync(driveId, remoteFolder, name, file, size, ct);
 
-                        var dst = Path.Combine(_sentDir, rel);
-                        Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
-                        if (File.Exists(dst)) File.Delete(dst);
-                        File.Move(file, dst);
+                    bool uploaded = false;
+                    int attempts = 0;
 
-                        UploadedCountSession++;
-                        PendingCount--;
-                        FileUploaded?.Invoke(file, remote, size);
-                        CountersChanged?.Invoke(PendingCount, UploadedCountSession);
-                    }
-                    catch (Exception ex)
+                    while (!uploaded && attempts < 5) // até 5 tentativas
                     {
-                        StatusChanged?.Invoke($"falha ao enviar {name}: {ex.Message}");
+                        attempts++;
+                        try
+                        {
+                            if (size <= 4 * 1024 * 1024)
+                                await UploadSmallAsync(driveId, remoteFolder, name, file, ct);
+                            else
+                                await UploadLargeAsync(driveId, remoteFolder, name, file, size, ct);
+
+                            // sucesso → move para enviados
+                            var dst = Path.Combine(_sentDir, rel);
+                            Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+                            if (File.Exists(dst)) File.Delete(dst);
+                            File.Move(file, dst);
+
+                            UploadedCountSession++;
+                            PendingCount--;
+                            FileUploaded?.Invoke(file, remote, size);
+                            CountersChanged?.Invoke(PendingCount, UploadedCountSession);
+                            uploaded = true;
+                        }
+                        catch (HttpRequestException ex)
+                        {
+                            StatusChanged?.Invoke($"[BACKUP] rede indisponível em {name}, tentativa {attempts}: {ex.Message}");
+                            await Task.Delay(5000, ct); // espera 5s e tenta de novo
+                        }
+                        catch (InvalidOperationException ex) when (ex.Message.Contains("409"))
+                        {
+                            StatusChanged?.Invoke($"[BACKUP] conflito em {name}, recriando sessão...");
+                            await Task.Delay(2000, ct);
+                        }
+                        catch (Exception ex)
+                        {
+                            StatusChanged?.Invoke($"[BACKUP] falha ao enviar {name}: {ex.Message}");
+                            break; // não adianta insistir (ex: permissão negada)
+                        }
                     }
                 }
 
                 LastRunUtc = DateTime.UtcNow;
                 CountersChanged?.Invoke(PendingCount, UploadedCountSession);
-                StatusChanged?.Invoke($"ciclo concluído: pendentes={PendingCount}, enviados(sessão)={UploadedCountSession}");
+                StatusChanged?.Invoke($"[BACKUP] ciclo concluído: pendentes={PendingCount}, enviados(sessão)={UploadedCountSession}");
             }
             finally
             {
@@ -247,12 +269,11 @@ namespace leituraWPF.Services
         private async Task UploadLargeAsync(string driveId, string folder, string name, string path, long size, CancellationToken ct)
         {
             var createUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(folder)}/{Uri.EscapeDataString(name)}:/createUploadSession";
-            // >>> correção: usar JsonObject aqui também
             var body = new JsonObject
             {
                 ["item"] = new JsonObject
                 {
-                    ["@microsoft.graph.conflictBehavior"] = "replace"
+                    ["@microsoft.graph.conflictBehavior"] = "replace" // força sobrescrever se já existir
                 }
             };
             using var createContent = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
