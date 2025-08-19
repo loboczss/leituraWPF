@@ -93,11 +93,16 @@ namespace leituraWPF.Services
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 var parts = ParseCsvLine(line);
                 if (parts.Length < 7) continue;
-                var f = new Funcionario(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]);
+
+                // Remove zeros à esquerda da matrícula
+                var matricula = parts[0].TrimStart('0');
+
+                var f = new Funcionario(matricula, parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]);
                 dict[f.Matricula] = f;
             }
             return dict;
         }
+
 
         private async Task<string> GetDriveIdFromListAsync(CancellationToken ct)
         {

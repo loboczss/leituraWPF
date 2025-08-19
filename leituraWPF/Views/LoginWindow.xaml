@@ -1,12 +1,233 @@
 <Window x:Class="leituraWPF.LoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Login" Height="200" Width="300" WindowStartupLocation="CenterScreen"
+        Title="Login" Height="500" Width="400" 
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
         Loaded="Window_Loaded">
-    <StackPanel Margin="20">
-        <TextBlock Text="Matrícula:" />
-        <TextBox Name="TxtMatricula" Margin="0,5,0,10" />
-        <TextBlock Name="TxtSummary" Margin="0,0,0,10" />
-        <Button Content="Entrar" Width="80" HorizontalAlignment="Right" Click="BtnLogin_Click" />
-    </StackPanel>
+
+    <Window.Resources>
+        <!-- Gradiente para o fundo - tons de azul -->
+        <LinearGradientBrush x:Key="BackgroundGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#1e3c72" Offset="0"/>
+            <GradientStop Color="#2a5298" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Gradiente para o botão - azul -->
+        <LinearGradientBrush x:Key="ButtonGradient" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#4a90e2" Offset="0"/>
+            <GradientStop Color="#6bb6ff" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Estilo para TextBox - CORRIGIDO -->
+        <Style x:Key="ModernTextBox" TargetType="TextBox">
+            <Setter Property="Height" Value="45"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#333"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="White"
+                                CornerRadius="8"
+                                BorderBrush="#ddd"
+                                BorderThickness="2"
+                                x:Name="TextBoxBorder">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000" Opacity="0.1" 
+                                                BlurRadius="8" ShadowDepth="2"/>
+                            </Border.Effect>
+                            <TextBox Background="Transparent" 
+                                     BorderThickness="0"
+                                     Margin="15,12"
+                                     FontSize="{TemplateBinding FontSize}"
+                                     FontFamily="{TemplateBinding FontFamily}"
+                                     Foreground="{TemplateBinding Foreground}"
+                                     Text="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     CaretBrush="#333"
+                                     SelectionBrush="#4a90e2"
+                                     x:Name="PART_EditableTextBox"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="TextBoxBorder" Property="BorderBrush" Value="#4a90e2"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TextBoxBorder" Property="BorderBrush" Value="#6bb6ff"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Estilo para Button -->
+        <Style x:Key="ModernButton" TargetType="Button">
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{StaticResource ButtonGradient}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="25"
+                                x:Name="ButtonBorder">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#4a90e2" Opacity="0.3" 
+                                                BlurRadius="15" ShadowDepth="0"/>
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="#5ba0f2" Offset="0"/>
+                                            <GradientStop Color="#7cc6ff" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Estilo para TextBlock labels -->
+        <Style x:Key="LabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+    </Window.Resources>
+
+    <!-- Container principal com gradiente -->
+    <Border Background="{StaticResource BackgroundGradient}" CornerRadius="15">
+        <Border.Effect>
+            <DropShadowEffect Color="#000" Opacity="0.3" BlurRadius="20" ShadowDepth="10"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Barra de título customizada - ARRASTÁVEL -->
+            <Grid Grid.Row="0" Height="40" 
+                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown"
+                  Background="Transparent"
+                  Cursor="Hand">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Área arrastável -->
+                <Border Grid.Column="0" Background="Transparent"/>
+
+                <!-- Botão fechar -->
+                <Border Grid.Column="1" 
+                        Width="40" Height="30"
+                        Margin="5"
+                        CornerRadius="4"
+                        Background="Transparent"
+                        Cursor="Hand"
+                        MouseLeftButtonDown="CloseButton_Click"
+                        x:Name="CloseButtonBorder">
+                    <TextBlock Text="✕" 
+                              HorizontalAlignment="Center" 
+                              VerticalAlignment="Center"
+                              FontSize="14"
+                              FontWeight="Bold"
+                              Foreground="White"/>
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#44FF0000"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                </Border>
+            </Grid>
+
+            <!-- Conteúdo principal -->
+            <StackPanel Grid.Row="1" Margin="40,20,40,30" VerticalAlignment="Top">
+
+                <!-- Ícone e título -->
+                <Grid Margin="0,0,0,25">
+                    <Ellipse Width="70" Height="70" 
+                            Fill="White" 
+                            Opacity="0.9"
+                            HorizontalAlignment="Center"/>
+                    <TextBlock Text="👤" 
+                              FontSize="30" 
+                              HorizontalAlignment="Center" 
+                              VerticalAlignment="Center"
+                              Margin="0,3,0,0"/>
+                </Grid>
+
+                <TextBlock Text="Bem-vindo!" 
+                          FontSize="22" 
+                          FontWeight="Bold" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"
+                          Margin="0,0,0,8"/>
+
+                <TextBlock Text="Faça login para continuar" 
+                          FontSize="13" 
+                          Foreground="White" 
+                          Opacity="0.8"
+                          HorizontalAlignment="Center"
+                          Margin="0,0,0,25"/>
+
+                <!-- Campo de matrícula -->
+                <TextBlock Text="Matrícula:" Style="{StaticResource LabelStyle}"/>
+                <TextBox Name="TxtMatricula" 
+                        Style="{StaticResource ModernTextBox}"
+                        Margin="0,0,0,15"/>
+
+                <!-- Mensagem de status -->
+                <Border Background="#33FFFFFF"
+                        CornerRadius="4"
+                        Margin="0,0,0,20"
+                        HorizontalAlignment="Center"
+                        MinWidth="200"
+                        Visibility="Collapsed"
+                        x:Name="StatusBorder">
+                    <TextBlock Name="TxtSummary" 
+                              FontSize="11"
+                              Foreground="#333"
+                              HorizontalAlignment="Center"
+                              TextWrapping="Wrap"
+                              Padding="10,5"/>
+                </Border>
+
+                <!-- Botão de login -->
+                <Button Content="ENTRAR" 
+                       Style="{StaticResource ModernButton}"
+                       Click="BtnLogin_Click"
+                       Margin="0,15,0,20"
+                       MinWidth="140"
+                       HorizontalAlignment="Center"/>
+
+            </StackPanel>
+        </Grid>
+    </Border>
 </Window>
