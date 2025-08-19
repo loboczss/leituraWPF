@@ -99,7 +99,14 @@ namespace leituraWPF
                 {
                     while (await _autoSyncTimer.WaitForNextTickAsync(_cts.Token))
                     {
-                        await SyncAndBackupAsync();
+                        try
+                        {
+                            await SyncAndBackupAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"[WARN] Auto-sync falhou: {ex.Message}");
+                        }
                     }
                 }
                 catch (OperationCanceledException) { /* janela fechando: ok */ }
@@ -141,11 +148,12 @@ namespace leituraWPF
 
                 try
                 {
-                    // Aqui você decide o que baixar no sync periódico.
-                    // Exemplo: deixar instalação AC/MT sempre atualizada.
+                    // Baixa arquivos de manutenção e garante que o de instalação
+                    // da UF selecionada seja atualizado a cada ciclo.
+                    var uf = GetSelectedUf();
                     var downloaded = await _downloader.DownloadMatchingJsonAsync(
                         _downloadsDir,
-                        extraQueries: new[] { "Instalacao_AC", "Instalacao_MT" }
+                        extraQueries: new[] { $"Instalacao_{uf}" }
                     );
 
                     var stats = SyncStatsService.Load();
@@ -368,15 +376,12 @@ namespace leituraWPF
                     return;
                 }
 
-                // ===== FLUXO 0 → INSTALAÇÃO: ler APENAS arquivo de instalação e baixar conforme necessário =====
+                // ===== FLUXO 0 → INSTALAÇÃO: ler APENAS arquivo de instalação local =====
                 if (raw == "0")
                 {
-                    SetStatus("Atualizando arquivo de instalação...");
+                    SetStatus("Lendo arquivo de instalação local...");
                     progress.Visibility = Visibility.Visible;
                     progress.IsIndeterminate = true;
-
-                    // Baixa/atualiza SOMENTE “Instalacao_{UF}”
-                    await _downloader.DownloadMatchingJsonAsync(_downloadsDir, extraQueries: new[] { $"Instalacao_{uf}" });
 
                     // Lê as ROTAS direto do(s) arquivo(s) de instalação (sem tocar no cache de manutenção)
                     var rotasInstalacao = await LoadRotasFromInstallationAsync(uf);
