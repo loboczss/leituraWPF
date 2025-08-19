@@ -1,5 +1,4 @@
 using System;
-using System.Windows;
 using System.Windows.Forms;
 
 namespace leituraWPF.Services
@@ -9,11 +8,13 @@ namespace leituraWPF.Services
         private readonly NotifyIcon _notifyIcon;
         private readonly Action _showWindow;
         private readonly Action _sync;
+        private readonly Action _exit;
 
-        public TrayService(Action showWindow, Action sync)
+        public TrayService(Action showWindow, Action sync, Action exit)
         {
             _showWindow = showWindow;
             _sync = sync;
+            _exit = exit;
 
             _notifyIcon = new NotifyIcon
             {
@@ -25,7 +26,7 @@ namespace leituraWPF.Services
             var menu = new ContextMenuStrip();
             menu.Items.Add("Abrir o aplicativo", null, (s, e) => _showWindow());
             menu.Items.Add("Iniciar sincronização manual", null, (s, e) => _sync());
-            menu.Items.Add("Fechar o aplicativo", null, (s, e) => System.Windows.Application.Current?.Shutdown());
+            menu.Items.Add("Fechar o aplicativo", null, (s, e) => _exit());
             _notifyIcon.ContextMenuStrip = menu;
             _notifyIcon.DoubleClick += (s, e) => _showWindow();
         }
