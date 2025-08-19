@@ -2,16 +2,17 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using leituraWPF.Utils;
 
 namespace leituraWPF.Services
 {
     public sealed class TokenService
     {
-        private readonly leituraWPF.AppConfig _cfg;
+        private readonly AppConfig _cfg;
         private readonly IConfidentialClientApplication _app;
         private readonly string _cachePath;
 
-        public TokenService(leituraWPF.AppConfig cfg)
+        public TokenService(AppConfig cfg)
         {
             _cfg = cfg;
 
