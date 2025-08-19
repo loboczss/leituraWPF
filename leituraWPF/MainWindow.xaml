@@ -516,7 +516,7 @@
                             <StackPanel Grid.Column="0" Margin="0,0,16,0">
                                 <TextBlock Text="Pasta de Origem" Style="{StaticResource FieldLabel}"/>
                                 <TextBox x:Name="txtOrigem" Style="{StaticResource RoundedTextBox}"
-                                         Height="42" IsReadOnly="True" Foreground="#007ACC"
+                                         Height="42" IsReadOnly="True"
                                          Text="Selecione uma pasta..." VerticalContentAlignment="Center"/>
                             </StackPanel>
 
