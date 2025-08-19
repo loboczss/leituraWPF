@@ -34,10 +34,17 @@ namespace leituraWPF
 
         private readonly ObservableCollection<LogEntry> _logItems = new();
         private List<ClientRecord> _cacheRecords = new();
+        private readonly Funcionario? _funcionario;
 
-        public MainWindow()
+        public MainWindow(Funcionario? funcionario = null)
         {
             InitializeComponent();
+
+            _funcionario = funcionario;
+            if (_funcionario != null)
+            {
+                LblUsuario.Text = $"Usuário: {_funcionario.Nome}";
+            }
 
             _downloadsDir = Path.Combine(AppContext.BaseDirectory, "downloads");
             Directory.CreateDirectory(_downloadsDir);

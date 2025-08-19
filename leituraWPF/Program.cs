@@ -57,7 +57,7 @@ namespace leituraWPF
 
             if (login.ShowDialog() == true)
             {
-                app.Run(new MainWindow());
+                app.Run(new MainWindow(login.FuncionarioLogado));
             }
         }
     }
