@@ -560,24 +560,28 @@
                         <!-- Status e Progresso -->
                         <Border Style="{StaticResource SecondaryCardStyle}" Margin="0,8,0,0" Height="95">
                             <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="66*"/>
+                                    <ColumnDefinition Width="691*"/>
+                                </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Border x:Name="StatusBadge" Style="{StaticResource StatusBadge}" Background="#d1ecf1">
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10,0,10,0" Grid.ColumnSpan="2">
+                                    <Border x:Name="StatusBadge" Style="{StaticResource StatusBadge}" Background="#d1ecf1" Height="26" Width="122">
                                         <TextBlock Text="🔄 Aguardando" FontSize="12" Foreground="#0c5460" FontWeight="Medium"/>
                                     </Border>
                                     <Button x:Name="btnAbrirPasta" Content="📂 Abrir Destino" 
-                                            Style="{StaticResource SecondaryButton}" Height="32"
-                                            Margin="16,0,0,0" Visibility="Collapsed"
-                                            Click="btnAbrirPasta_Click"/>
+                                            Style="{StaticResource SecondaryButton}" Height="42"
+                                            Margin="16,0,0,0" 
+                                            Click="btnAbrirPasta_Click" Width="228"/>
                                 </StackPanel>
 
                                 <ProgressBar x:Name="progress" Grid.Row="1" 
                                            Style="{StaticResource ModernProgressBar}"
-                                           Visibility="Collapsed" Value="0"/>
+                                           Visibility="Collapsed" Value="0" Grid.ColumnSpan="2" Margin="0,0,0,-6"/>
                             </Grid>
                         </Border>
                     </StackPanel>
