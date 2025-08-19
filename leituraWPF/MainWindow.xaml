@@ -558,7 +558,7 @@
                         </Grid>
 
                         <!-- Status e Progresso -->
-                        <Border Style="{StaticResource SecondaryCardStyle}" Margin="0,8,0,0">
+                        <Border Style="{StaticResource SecondaryCardStyle}" Margin="0,8,0,0" Height="95">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
