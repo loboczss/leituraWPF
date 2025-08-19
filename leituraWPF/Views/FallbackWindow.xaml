@@ -401,7 +401,7 @@
                     </TextBlock>
                     <TextBox x:Name="TxtIdSigfi"
                              Style="{StaticResource ModernTextBox.Large}"
-                             Tag="Ex.: 123456"
+                             Tag="Ex.: 12345"
                              TextChanged="TxtIdSigfi_TextChanged" Height="80"/>
 
                     <!-- Rota -->
@@ -412,7 +412,7 @@
 
                     <!-- Check -->
                     <CheckBox x:Name="Chk160"
-                              Content="Sistema SIGFI 160"
+                              Content="Sistema SIGFI 160 HOPPECK?"
                               Style="{StaticResource ModernCheckBox}"
                               Checked="Chk160_Checked"
                               Unchecked="Chk160_Checked"/>
