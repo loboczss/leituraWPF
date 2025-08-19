@@ -538,7 +538,7 @@
                             <StackPanel Grid.Column="0" Margin="0,0,20,0">
                                 <TextBlock Text="Número da Ordem de Serviço" Style="{StaticResource FieldLabel}"/>
                                 <TextBox x:Name="txtNumos" Style="{StaticResource RoundedTextBox}"
-                                         Height="42" FontSize="18" FontWeight="SemiBold" 
+                                         Height="42" FontSize="16" FontWeight="SemiBold" 
                                          VerticalContentAlignment="Center"/>
                             </StackPanel>
 
