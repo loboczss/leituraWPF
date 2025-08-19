@@ -54,9 +54,11 @@ namespace leituraWPF
 
             var app = new App();
             app.InitializeComponent();
+            app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             if (login.ShowDialog() == true)
             {
+                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
                 app.Run(new MainWindow(login.FuncionarioLogado));
             }
         }
