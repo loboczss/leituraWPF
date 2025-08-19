@@ -63,6 +63,9 @@ namespace leituraWPF
             _backup.FileUploaded += (local, remote, bytes) =>
             {
                 Log($"[UPL] {Path.GetFileName(local)} → {remote} ({bytes:n0} bytes)");
+                var stats = SyncStatsService.Load();
+                stats.Uploaded++;
+                SyncStatsService.Save(stats);
                 Dispatcher.Invoke(() =>
                 {
                     TxtSyncStatus.Text = $"Enviado: {Path.GetFileName(local)}";
@@ -82,6 +85,11 @@ namespace leituraWPF
 
             // No carregamento: checa atualização (com timeout) e prepara o cache local
             this.Loaded += MainWindow_Loaded;
+        }
+
+        public void RunManualSync()
+        {
+            _ = _backup.ForceRunOnceAsync();
         }
 
         private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)
@@ -262,6 +270,10 @@ namespace leituraWPF
                     _downloadsDir,
                     extraQueries: new[] { "Instalacao_AC" } // baixa também instalação
                 );
+
+                var stats = SyncStatsService.Load();
+                stats.Downloaded += downloaded.Count;
+                SyncStatsService.Save(stats);
 
                 SetStatus($"Download finalizado. {downloaded.Count} arquivo(s).");
                 SetStatus("Atualizando cache local (manutenção)...");

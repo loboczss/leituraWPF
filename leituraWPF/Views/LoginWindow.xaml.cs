@@ -1,4 +1,5 @@
 using leituraWPF.Models;
+using leituraWPF.Services;
 using System;
 using System.Collections.Generic;
 using System.Windows;
@@ -15,6 +16,12 @@ namespace leituraWPF
         {
             InitializeComponent();
             _funcionarios = funcionarios ?? throw new ArgumentNullException(nameof(funcionarios));
+        }
+
+        private void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            var stats = SyncStatsService.Load();
+            TxtSummary.Text = $"Enviados: {stats.Uploaded} | Baixados: {stats.Downloaded}";
         }
 
         private void BtnLogin_Click(object sender, RoutedEventArgs e)
