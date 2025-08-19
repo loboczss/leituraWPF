@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Windows.Forms;
 
 namespace leituraWPF.Services
@@ -16,9 +17,14 @@ namespace leituraWPF.Services
             _sync = sync;
             _exit = exit;
 
+            var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ico-app.ico");
+            var icon = File.Exists(iconPath)
+                ? new System.Drawing.Icon(iconPath)
+                : System.Drawing.SystemIcons.Application;
+
             _notifyIcon = new NotifyIcon
             {
-                Icon = System.Drawing.SystemIcons.Application,
+                Icon = icon,
                 Visible = true,
                 Text = "leituraWPF"
             };
