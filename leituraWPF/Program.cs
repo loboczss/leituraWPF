@@ -51,7 +51,7 @@ namespace leituraWPF
             var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
             if (!File.Exists(path))
             {
-                MessageBox.Show(
+                System.Windows.MessageBox.Show(
                     "Arquivo appsettings.json não encontrado. Usando configurações padrão.",
                     "Aviso",
                     MessageBoxButton.OK,

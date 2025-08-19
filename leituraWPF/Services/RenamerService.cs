@@ -256,7 +256,7 @@ namespace leituraWPF.Services
                     reqCtrl = 1;
                     if (controllers.Count != 1)
                     {
-                        MessageBox.Show(
+                        System.Windows.MessageBox.Show(
                             "[INTELBRAS] Requerido: 1 controlador.",
                             "Aviso",
                             MessageBoxButton.OK,
@@ -269,7 +269,7 @@ namespace leituraWPF.Services
                     reqCtrl = 2;
                     if (controllers.Count != 2)
                     {
-                        MessageBox.Show(
+                        System.Windows.MessageBox.Show(
                             "[HOPPECKE 160] Requerido: 2 controladores.",
                             "Aviso",
                             MessageBoxButton.OK,
@@ -282,7 +282,7 @@ namespace leituraWPF.Services
                     reqCtrl = 1; // genérico
                     if (controllers.Count < 1)
                     {
-                        MessageBox.Show(
+                        System.Windows.MessageBox.Show(
                             "Requerido: pelo menos 1 controlador.",
                             "Aviso",
                             MessageBoxButton.OK,

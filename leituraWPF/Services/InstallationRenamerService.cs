@@ -108,7 +108,7 @@ namespace leituraWPF.Services
                 {
                     if (controllers.Count != 2)
                     {
-                        MessageBox.Show(
+                        System.Windows.MessageBox.Show(
                             "[INSTALAÇÃO SIGFI160] Requer 2 controladores.",
                             "Aviso",
                             MessageBoxButton.OK,
@@ -120,7 +120,7 @@ namespace leituraWPF.Services
                 {
                     if (controllers.Count < 1)
                     {
-                        MessageBox.Show(
+                        System.Windows.MessageBox.Show(
                             "[INSTALAÇÃO] Requer pelo menos 1 controlador.",
                             "Aviso",
                             MessageBoxButton.OK,
