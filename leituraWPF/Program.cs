@@ -63,7 +63,7 @@ namespace leituraWPF
             var csvPath = Path.Combine(baseDir, "funcionarios.csv");
             if (!File.Exists(csvPath))
             {
-                MessageBox.Show("Arquivo de funcionários não disponível e não foi possível baixá-lo.",
+                System.Windows.MessageBox.Show("Arquivo de funcionários não disponível e não foi possível baixá-lo.",
                                 "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }

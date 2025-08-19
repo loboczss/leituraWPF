@@ -35,7 +35,7 @@ namespace leituraWPF
             }
             else
             {
-                MessageBox.Show("Matrícula não encontrada.", "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show("Matrícula não encontrada.", "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }

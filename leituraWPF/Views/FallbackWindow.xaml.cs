@@ -255,12 +255,12 @@ namespace leituraWPF
             // validações mínimas
             if (string.IsNullOrWhiteSpace(TxtIdSigfi.Text) || TxtIdSigfi.Text.Length <= _ufPrefixo.Length)
             {
-                MessageBox.Show(this, "Complete o ID SIGFI.", "Atenção", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, "Complete o ID SIGFI.", "Atenção", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             if (_allowAnyId && CmbRota.SelectedItem == null)
             {
-                MessageBox.Show(this, "Selecione a rota.", "Atenção", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, "Selecione a rota.", "Atenção", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -291,7 +291,7 @@ namespace leituraWPF
 
                 RenamedSuccessfully = true;
 
-                MessageBox.Show(this,
+                System.Windows.MessageBox.Show(this,
                     $"Arquivos processados com sucesso!\nDestino:\n{_renamer.LastDestination}",
                     "Sucesso", MessageBoxButton.OK, MessageBoxImage.Information);
 
@@ -300,14 +300,14 @@ namespace leituraWPF
             }
             catch (OperationCanceledException)
             {
-                MessageBox.Show(this, "Operação cancelada.", "Cancelado",
+                System.Windows.MessageBox.Show(this, "Operação cancelada.", "Cancelado",
                                 MessageBoxButton.OK, MessageBoxImage.Information);
                 BtnOk.IsEnabled = true;
                 BtnCancel.IsEnabled = true;
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"Falha ao processar arquivos:\n{ex.Message}",
+                System.Windows.MessageBox.Show(this, $"Falha ao processar arquivos:\n{ex.Message}",
                                 "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
                 BtnOk.IsEnabled = true;
                 BtnCancel.IsEnabled = true;

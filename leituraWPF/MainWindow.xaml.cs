@@ -141,7 +141,7 @@ namespace leituraWPF
                         CreateNoWindow = true
                     });
 
-                    Application.Current.Shutdown();
+                    System.Windows.Application.Current.Shutdown();
                 }
             }
             catch (Exception ex)
