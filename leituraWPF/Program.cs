@@ -108,10 +108,8 @@ namespace leituraWPF
                         if (!main.IsVisible) main.Show();
                         main.Activate();
                     }),
-
                     sync: () => main.RunManualSync(),
-
-
+                    exit: () => app.Dispatcher.Invoke(() => main.ForceClose()));
                 app.Run(main);
                 // Ao sair do Run, 'using' garante Dispose do tray e do poller
             }

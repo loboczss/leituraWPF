@@ -32,6 +32,9 @@ namespace leituraWPF
         // Conjunto de registros carregados em memória (para tentar resolver cliente/rota)
         private readonly IList<ClientRecord> _records;
 
+        // Busca auxiliar no arquivo de instalação
+        private readonly InstalacaoService _instalacaoService = new InstalacaoService();
+
         // Modo manual (permite ID livre e escolha manual da rota)
         private readonly bool _allowAnyId;
 
@@ -101,14 +104,26 @@ namespace leituraWPF
                     _records.FirstOrDefault(r =>
                         r.IdSigfi.Equals(idSigfi, StringComparison.OrdinalIgnoreCase)));
 
+                (string NomeCliente, string Rota)? encontrado = null;
+
+                if (record != null)
+                {
+                    encontrado = (record.NomeCliente, record.Rota);
+                }
+                else
+                {
+                    encontrado = await Task.Run(() =>
+                        _instalacaoService.BuscarPorIdSigfi(_ufPrefixo, idSigfi));
+                }
+
                 Dispatcher.Invoke(() =>
                 {
-                    if (record != null)
+                    if (encontrado != null)
                     {
-                        ClienteEncontrado = record.NomeCliente;
+                        ClienteEncontrado = encontrado.Value.NomeCliente;
                         LblCliente.Content = $"Cliente: {ClienteEncontrado}";
 
-                        var rotaEncontrada = record.Rota;
+                        var rotaEncontrada = encontrado.Value.Rota;
                         Rota = rotaEncontrada;
 
                         // Seleciona rota na combo (ou adiciona se não existir)
