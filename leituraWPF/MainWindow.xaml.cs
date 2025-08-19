@@ -425,15 +425,15 @@ namespace leituraWPF
                     // Lê as ROTAS direto do(s) arquivo(s) de instalação (sem tocar no cache de manutenção)
                     var rotasInstalacao = await LoadRotasFromInstallationAsync(uf);
 
-                    // Abre o fallback permitindo ID livre; usa o RENAMER padrão para manter compatibilidade de tipos
-                    // (Se no futuro você ajustar o FallbackWindow para aceitar um IRenamer, troque para _installRenamer)
+                    // Abre o fallback permitindo ID livre usando o renomeador de instalação
                     var fb = new FallbackWindow($"{uf}0",
                                                 rotasInstalacao,
                                                 uf,
                                                 new List<ClientRecord>(), // não usamos cache de manutenção aqui
-                                                _renamer,                  // mantém compatibilidade com assinatura atual
+                                                _renamer,
                                                 _sourceFolderPath,
-                                                allowAnyId: true)
+                                                allowAnyId: true,
+                                                installRenamer: _installRenamer)
                     {
                         Owner = this
                     };
