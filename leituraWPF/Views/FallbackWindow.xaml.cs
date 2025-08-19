@@ -63,10 +63,6 @@ namespace leituraWPF
             // Em modo manual, rota pode ser escolhida pelo usuário
             CmbRota.IsEnabled = allowAnyId;
 
-            // Prefixo obrigatório no campo ID SIGFI
-            TxtIdSigfi.Text = _ufPrefixo;
-            TxtIdSigfi.SelectionStart = TxtIdSigfi.Text.Length;
-
             ClienteEncontrado = null;
             if (_allowAnyId)
                 LblCliente.Content = "Modo manual - cliente não verificado.";
@@ -83,7 +79,7 @@ namespace leituraWPF
         {
             bool idValido =
                 !string.IsNullOrWhiteSpace(TxtIdSigfi.Text) &&
-                TxtIdSigfi.Text.Length > _ufPrefixo.Length;
+                TxtIdSigfi.Text.Length >= 5;
 
             if (_allowAnyId)
             {
@@ -172,23 +168,18 @@ namespace leituraWPF
             if (_carregando) return;
 
             string texto = (TxtIdSigfi.Text ?? "").Trim();
-
-            // mantém prefixo da UF
-            if (!texto.StartsWith(_ufPrefixo, StringComparison.OrdinalIgnoreCase))
+            string somenteDigitos = new string(texto.Where(char.IsDigit).ToArray());
+            if (somenteDigitos != texto)
             {
-                texto = _ufPrefixo;
-                TxtIdSigfi.Text = texto;
-                TxtIdSigfi.SelectionStart = texto.Length;
-                ClienteEncontrado = null;
-                LblCliente.Content = "Digite o restante do ID SIGFI.";
-                Rota = string.Empty;
-                if (!_allowAnyId) CmbRota.SelectedIndex = -1;
-                Validate();
+                TxtIdSigfi.Text = somenteDigitos;
+                TxtIdSigfi.SelectionStart = somenteDigitos.Length;
                 return;
             }
 
-            // aguarda ter pelo menos 5 chars após o prefixo
-            if (texto.Length < _ufPrefixo.Length + 5)
+            texto = somenteDigitos;
+
+            // aguarda ter pelo menos 5 dígitos
+            if (texto.Length < 5)
             {
                 ClienteEncontrado = null;
                 LblCliente.Content = "ID SIGFI incompleto (mínimo 5 dígitos).";
@@ -198,13 +189,15 @@ namespace leituraWPF
                 return;
             }
 
+            string idCompleto = _ufPrefixo + texto;
+
             if (_allowAnyId)
             {
                 // modo manual: não exige cliente, mas tenta enriquecer
                 LblCliente.Content = "Buscando cliente…";
                 try
                 {
-                    await BuscarClientePorIdSigfiAsync(texto);
+                    await BuscarClientePorIdSigfiAsync(idCompleto);
                 }
                 catch
                 {
@@ -217,7 +210,7 @@ namespace leituraWPF
                 // modo normal: precisa encontrar cliente
                 LblCliente.Content = "Buscando cliente…";
                 Validate(); // mantém OK desabilitado
-                await BuscarClientePorIdSigfiAsync(texto);
+                await BuscarClientePorIdSigfiAsync(idCompleto);
             }
         }
 
@@ -251,7 +244,7 @@ namespace leituraWPF
         private async void Ok_Click(object sender, RoutedEventArgs e)
         {
             // validações mínimas
-            if (string.IsNullOrWhiteSpace(TxtIdSigfi.Text) || TxtIdSigfi.Text.Length <= _ufPrefixo.Length)
+            if (string.IsNullOrWhiteSpace(TxtIdSigfi.Text) || TxtIdSigfi.Text.Length < 5)
             {
                 System.Windows.MessageBox.Show(this, "Complete o ID SIGFI.", "Atenção", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -263,7 +256,7 @@ namespace leituraWPF
             }
 
             // Captura finais
-            IdSigfi = TxtIdSigfi.Text.Trim();
+            IdSigfi = _ufPrefixo + TxtIdSigfi.Text.Trim();
             if (_allowAnyId)
                 Rota = (CmbRota.SelectedItem as ComboBoxItem)?.Content?.ToString();
 
