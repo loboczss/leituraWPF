@@ -107,7 +107,8 @@ namespace leituraWPF
             {
                 var record = await Task.Run(() =>
                     _records.FirstOrDefault(r =>
-                        r.IdSigfi.Equals(idSigfi, StringComparison.OrdinalIgnoreCase)));
+                        r.IdSigfi.Equals(idSigfi, StringComparison.OrdinalIgnoreCase) ||
+                        (r.UF + r.IdSigfi).Equals(idSigfi, StringComparison.OrdinalIgnoreCase)));
 
                 (string NomeCliente, string Rota)? encontrado = null;
 
@@ -115,7 +116,7 @@ namespace leituraWPF
                 {
                     encontrado = (record.NomeCliente, record.Rota);
                 }
-                else
+                else if (_allowAnyId)
                 {
                     encontrado = await Task.Run(() =>
                         _instalacaoService.BuscarPorIdSigfi(_ufPrefixo, idSigfi));
