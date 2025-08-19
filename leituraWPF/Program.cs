@@ -50,13 +50,21 @@ namespace leituraWPF
             // Carrega configuração
             var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
             if (!File.Exists(path))
-                throw new FileNotFoundException("Arquivo appsettings.json não encontrado.", path);
-
-            var json = File.ReadAllText(path);
-            Config = System.Text.Json.JsonSerializer.Deserialize<AppConfig>(json, new JsonSerializerOptions
             {
-                PropertyNameCaseInsensitive = true
-            }) ?? new AppConfig();
+                MessageBox.Show(
+                    "Arquivo appsettings.json não encontrado. Usando configurações padrão.",
+                    "Aviso",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+            else
+            {
+                var json = File.ReadAllText(path);
+                Config = JsonSerializer.Deserialize<AppConfig>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                }) ?? new AppConfig();
+            }
 
             var baseDir = AppContext.BaseDirectory;
             var tokenService = new TokenService(Config);
