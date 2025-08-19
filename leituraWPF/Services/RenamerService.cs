@@ -199,12 +199,12 @@ namespace leituraWPF.Services
                 LastDestination = clienteDir;
 
                 // 3) Verifica destino vazio
-                if (Directory.EnumerateFileSystemEntries(clienteDir).Any())
+                if (Directory.Exists(clienteDir))
                 {
                     MessageBox.Show("A pasta de destino já contém arquivos.",
                                     "Destino Não Vazio",
                                     MessageBoxButton.OK, MessageBoxImage.Warning);
-                    throw new OperationCanceledException("Destino não vazio.");
+                    return;
                 }
 
                 Report(10);
