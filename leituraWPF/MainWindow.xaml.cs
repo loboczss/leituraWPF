@@ -60,6 +60,12 @@ namespace leituraWPF
             _downloadsDir = Path.Combine(AppContext.BaseDirectory, "downloads");
             Directory.CreateDirectory(_downloadsDir);
 
+            // Define o caminho padrão da pasta de origem na área de trabalho
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            _sourceFolderPath = Path.Combine(desktop, "SALVAR AQUI");
+            Directory.CreateDirectory(_sourceFolderPath);
+            txtOrigem.Text = _sourceFolderPath;
+
             GridLog.ItemsSource = _logItems;
 
             _tokenService = new TokenService(Program.Config);
@@ -370,7 +376,8 @@ namespace leituraWPF
                     Description = "Escolha a pasta com os arquivos crus (con/c0n, inv, bat, imagens...)",
                     UseDescriptionForTitle = true,
                     ShowNewFolderButton = false,
-                    Multiselect = false
+                    Multiselect = false,
+                    SelectedPath = _sourceFolderPath
                 };
 
                 if (dlg.ShowDialog(this) == true)
@@ -555,7 +562,8 @@ namespace leituraWPF
                         Description = "Escolha a pasta com os arquivos crus (con/c0n, inv, bat, imagens...)",
                         UseDescriptionForTitle = true,
                         ShowNewFolderButton = false,
-                        Multiselect = false
+                        Multiselect = false,
+                        SelectedPath = _sourceFolderPath
                     };
                     if (dlg.ShowDialog(this) == true)
                     {
