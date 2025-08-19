@@ -1,10 +1,13 @@
 using leituraWPF.Services;
+using leituraWPF.Utils;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Windows;
-using leituraWPF.Utils;
 
 
 namespace leituraWPF
@@ -16,6 +19,22 @@ namespace leituraWPF
         [STAThread]
         public static void Main()
         {
+            using var mutex = new Mutex(true, "leituraWPF_SINGLE_INSTANCE", out bool created);
+            if (!created)
+            {
+                var current = Process.GetCurrentProcess();
+                var other = Process.GetProcessesByName(current.ProcessName)
+                                    .FirstOrDefault(p => p.Id != current.Id);
+                if (other != null)
+                {
+                    NativeMethods.ShowWindow(other.MainWindowHandle, NativeMethods.SW_RESTORE);
+                    NativeMethods.SetForegroundWindow(other.MainWindowHandle);
+                }
+                return;
+            }
+
+            StartupService.ConfigureStartup();
+
             // Carrega configuração
             var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
             if (!File.Exists(path))
@@ -59,7 +78,16 @@ namespace leituraWPF
             if (login.ShowDialog() == true)
             {
                 app.ShutdownMode = ShutdownMode.OnMainWindowClose;
-                app.Run(new MainWindow(login.FuncionarioLogado));
+                var main = new MainWindow(login.FuncionarioLogado);
+                using var tray = new TrayService(
+                    showWindow: () => app.Dispatcher.Invoke(() =>
+                    {
+                        if (main.WindowState == WindowState.Minimized) main.WindowState = WindowState.Normal;
+                        if (!main.IsVisible) main.Show();
+                        main.Activate();
+                    }),
+                    sync: () => main.RunManualSync());
+                app.Run(main);
             }
         }
     }
