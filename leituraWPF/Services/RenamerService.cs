@@ -41,6 +41,8 @@ namespace leituraWPF.Services
 
         public string LastDestination { get; private set; } = string.Empty;
 
+        public Funcionario? FuncionarioLogado { get; set; }
+
         public event Action<string>? FileReadyForBackup;
 
         #region Helpers
@@ -207,7 +209,17 @@ namespace leituraWPF.Services
                 {
                     $"Data: {now:dd/MM/yyyy}",
                     $"Hora: {now:HH:mm:ss}",
-                    $"Usuário: {Environment.UserName}",
+                    $"Usuário: {Environment.UserName}"
+                };
+
+                if (FuncionarioLogado is { } func)
+                {
+                    logLines.Add($"Funcionário: {func.Nome}");
+                    logLines.Add($"Matrícula: {func.Matricula}");
+                }
+
+                logLines.AddRange(new[]
+                {
                     $"Pasta de origem: {sourceFolder}",
                     $"NOMECLIENTE: {record.NomeCliente}",
                     $"TIPO: {record.Tipo}",
@@ -215,7 +227,8 @@ namespace leituraWPF.Services
                     $"EMPRESA: {record.Empresa}",
                     $"ROTA: {record.Rota}",
                     string.Empty,
-                    "Arquivos:" }; 
+                    "Arquivos:"
+                });
 
                 // 3) Verifica destino já existente antes de criar
                 if (Directory.Exists(clienteDir) && Directory.EnumerateFileSystemEntries(clienteDir).Any())

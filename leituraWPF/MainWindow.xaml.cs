@@ -56,6 +56,7 @@ namespace leituraWPF
             {
                 LblUsuario.Text = $"Usuário: {_funcionario.Nome}";
             }
+            _renamer.FuncionarioLogado = _funcionario;
 
             _downloadsDir = Path.Combine(AppContext.BaseDirectory, "downloads");
             Directory.CreateDirectory(_downloadsDir);
