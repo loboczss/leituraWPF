@@ -479,8 +479,8 @@
                         <TextBlock Text="suporte@oneengenharia.com" 
                                    Foreground="#B8E0F8" FontSize="11" TextWrapping="Wrap"/>
 
-                        <TextBlock x:Name="LblVersao" Text="v1.2.3"
-                                   Foreground="#B8E0F8" FontSize="10" FontStyle="Italic" 
+                        <TextBlock x:Name="LblVersao"
+                                   Foreground="#B8E0F8" FontSize="10" FontStyle="Italic"
                                    Margin="0,8,0,0"/>
                     </StackPanel>
 
