@@ -13,6 +13,7 @@ namespace leituraWPF
     {
         // ===== Dependências para renomeação =====
         private readonly RenamerService _renamer;
+        private readonly InstallationRenamerService? _installRenamer;
         private readonly string _sourceFolder;
 
         // Controle para evitar buscas durante a inicialização
@@ -40,7 +41,9 @@ namespace leituraWPF
 
         // Conclusão (opcional, para MainWindow saber que renomeou com sucesso)
         public bool RenamedSuccessfully { get; private set; }
-        public string? LastDestination => _renamer?.LastDestination;
+        public string? LastDestination =>
+            _allowAnyId && _installRenamer != null ?
+                _installRenamer.LastDestination : _renamer?.LastDestination;
 
         public FallbackWindow(string osFull,
                               IEnumerable<string> rotas,
@@ -48,11 +51,13 @@ namespace leituraWPF
                               IEnumerable<ClientRecord> records,
                               RenamerService renamer,
                               string sourceFolder,
-                              bool allowAnyId = false)
+                              bool allowAnyId = false,
+                              InstallationRenamerService? installRenamer = null)
         {
             InitializeComponent();
 
             _renamer = renamer ?? throw new ArgumentNullException(nameof(renamer));
+            _installRenamer = installRenamer;
             _sourceFolder = sourceFolder ?? throw new ArgumentNullException(nameof(sourceFolder));
 
             OSFull = osFull ?? string.Empty;
@@ -284,7 +289,6 @@ namespace leituraWPF
 
             try
             {
-                var rec = BuildRecord();
                 var progress = new Progress<double>(v =>
                 {
                     var clamped = Math.Max(0, Math.Min(100, v));
@@ -292,14 +296,35 @@ namespace leituraWPF
                     RenPercent.Text = $"{clamped:0}%";
                 });
 
-                // Renomeação assíncrona (não trava UI)
-                await _renamer.RenameAsync(_sourceFolder, rec, progress);
+                if (_allowAnyId && _installRenamer != null)
+                {
+                    await _installRenamer.RenameInstallationAsync(
+                        _sourceFolder,
+                        _ufPrefixo,
+                        IdSigfi,
+                        Rota ?? string.Empty,
+                        ClienteEncontrado ?? string.Empty,
+                        Is160,
+                        progress);
 
-                RenamedSuccessfully = true;
+                    RenamedSuccessfully = true;
 
-                System.Windows.MessageBox.Show(this,
-                    $"Arquivos processados com sucesso!\nDestino:\n{_renamer.LastDestination}",
-                    "Sucesso", MessageBoxButton.OK, MessageBoxImage.Information);
+                    System.Windows.MessageBox.Show(this,
+                        $"Arquivos processados com sucesso!\nDestino:\n{_installRenamer.LastDestination}",
+                        "Sucesso", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    var rec = BuildRecord();
+
+                    await _renamer.RenameAsync(_sourceFolder, rec, progress);
+
+                    RenamedSuccessfully = true;
+
+                    System.Windows.MessageBox.Show(this,
+                        $"Arquivos processados com sucesso!\nDestino:\n{_renamer.LastDestination}",
+                        "Sucesso", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
 
                 DialogResult = true;
                 Close();
