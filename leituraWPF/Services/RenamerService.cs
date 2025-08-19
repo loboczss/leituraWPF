@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Reflection;
 using Microsoft.VisualBasic; // para InputBox
 using leituraWPF.Models;
 
@@ -209,7 +210,8 @@ namespace leituraWPF.Services
                 {
                     $"Data: {now:dd/MM/yyyy}",
                     $"Hora: {now:HH:mm:ss}",
-                    $"Usuário: {Environment.UserName}"
+                    $"Usuário: {Environment.UserName}",
+                    $"Versão: {Assembly.GetExecutingAssembly().GetName().Version}"
                 };
 
                 if (FuncionarioLogado is { } func)
