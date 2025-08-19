@@ -1,6 +1,9 @@
 ﻿using System;
 using System.IO;
 using System.Text.Json;
+using System.Windows;
+using leituraWPF.Services;
+using leituraWPF.Views;
 
 namespace leituraWPF
 {
@@ -22,9 +25,28 @@ namespace leituraWPF
                 PropertyNameCaseInsensitive = true
             }) ?? new AppConfig();
 
+            // Tenta baixar o CSV de funcionários
+            var csvPath = Path.Combine(AppContext.BaseDirectory, "funcionarios.csv");
+            try
+            {
+                var tokenSvc = new TokenService(Config);
+                var csvSvc = new FuncionarioCsvService(Config, tokenSvc);
+                csvSvc.DownloadAsync(csvPath).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // ignora erros de download; será verificada a existência do arquivo abaixo
+            }
+
+            if (!File.Exists(csvPath))
+            {
+                MessageBox.Show("Não foi possível obter o arquivo de funcionários.", "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
             var app = new App();
             app.InitializeComponent();
-            app.Run(new MainWindow());
+            app.Run(new LoginWindow(csvPath));
         }
     }
 
