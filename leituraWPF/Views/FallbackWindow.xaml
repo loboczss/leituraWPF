@@ -2,36 +2,51 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Definir Dados Manualmente"
-        Width="600" Height="520"
+        Width="600" Height="658"
+        MinWidth="560"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
-        Background="White">
+        Background="White"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display">
 
+    <!-- Paleta centralizada -->
     <Window.Resources>
-        <!-- Estilo do botão primário -->
+        <SolidColorBrush x:Key="Primary" Color="#2E7BDB"/>
+        <SolidColorBrush x:Key="PrimaryDark" Color="#1E5FAF"/>
+        <SolidColorBrush x:Key="PrimaryDarker" Color="#1A4B8C"/>
+        <SolidColorBrush x:Key="Ink" Color="#2D3748"/>
+        <SolidColorBrush x:Key="InkMuted" Color="#718096"/>
+        <SolidColorBrush x:Key="LineLight" Color="#E2E8F0"/>
+        <SolidColorBrush x:Key="CardBg" Color="#F8FBFF"/>
+        <SolidColorBrush x:Key="CardLine" Color="#E8F0FE"/>
+
+        <!-- Buttons -->
         <Style x:Key="PrimaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#2E7BDB"/>
+            <Setter Property="Background" Value="{StaticResource Primary}"/>
             <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Padding" Value="20,12"/>
+            <Setter Property="Padding" Value="18,10"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="MinWidth" Value="120"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" 
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" 
-                                            VerticalAlignment="Center"/>
+                        <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#1E5FAF"/>
+                                <Setter Property="Background" Value="{StaticResource PrimaryDark}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background" Value="#1A4B8C"/>
+                                <Setter Property="Background" Value="{StaticResource PrimaryDarker}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -39,84 +54,110 @@
             </Setter>
         </Style>
 
-        <!-- Estilo do botão secundário -->
         <Style x:Key="SecondaryButton" TargetType="Button">
             <Setter Property="Background" Value="White"/>
-            <Setter Property="Foreground" Value="#2E7BDB"/>
-            <Setter Property="Padding" Value="20,12"/>
+            <Setter Property="Foreground" Value="{StaticResource Primary}"/>
+            <Setter Property="Padding" Value="18,10"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="BorderThickness" Value="2"/>
-            <Setter Property="BorderBrush" Value="#E8F0FE"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardLine}"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="MinWidth" Value="120"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border Background="{TemplateBinding Background}" 
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6"
+                                CornerRadius="8"
                                 Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" 
-                                            VerticalAlignment="Center"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="#F8FBFF"/>
-                                <Setter Property="BorderBrush" Value="#2E7BDB"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource Primary}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter Property="Background" Value="#E8F0FE"/>
                             </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6"/>
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <!-- Estilo do título/header -->
+        <!-- Tipografia -->
         <Style x:Key="HeaderText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontSize" Value="18"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="#1A365D"/>
-            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Margin" Value="0,0,0,16"/>
         </Style>
 
-        <!-- Estilo do label -->
         <Style x:Key="LabelText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Foreground" Value="#2D3748"/>
-            <Setter Property="Margin" Value="0,16,0,6"/>
+            <Setter Property="Foreground" Value="{StaticResource Ink}"/>
             <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Margin" Value="0,18,0,6"/>
         </Style>
 
-        <!-- Estilo moderno do TextBox -->
+        <!-- TEXTBOX -->
         <Style x:Key="ModernTextBox" TargetType="TextBox">
             <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#E2E8F0"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Primary}"/>
             <Setter Property="BorderThickness" Value="0,0,0,2"/>
-            <Setter Property="Padding" Value="8,10"/>
+
             <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Foreground" Value="#2D3748"/>
+            <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource Primary}"/>
+            <Setter Property="Height" Value="44"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="0">
-                            <ScrollViewer x:Name="PART_ContentHost" 
-                                        Margin="{TemplateBinding Padding}"
-                                        VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid>
+                            <Border x:Name="Outer"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"/>
+                            <TextBlock x:Name="Placeholder"
+                                       Margin="{TemplateBinding Padding}"
+                                       Foreground="{StaticResource InkMuted}"
+                                       IsHitTestVisible="False"
+                                       Text="{TemplateBinding Tag}"
+                                       VerticalAlignment="Center"
+                                       Visibility="Collapsed"/>
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsFocused" Value="True">
-                                <Setter Property="BorderBrush" Value="#2E7BDB"/>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Outer" Property="BorderBrush" Value="{StaticResource PrimaryDark}"/>
                                 <Setter Property="Background" Value="#FAFBFF"/>
                             </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="Text" Value=""/>
+                                    <Condition Property="IsKeyboardFocused" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Placeholder" Property="Visibility" Value="Visible"/>
+                            </MultiTrigger>
                             <Trigger Property="IsReadOnly" Value="True">
                                 <Setter Property="Background" Value="#F7FAFC"/>
-                                <Setter Property="Foreground" Value="#718096"/>
+                                <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#9AA5B1"/>
+                                <Setter TargetName="Outer" Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                            <Trigger Property="Validation.HasError" Value="True">
+                                <Setter TargetName="Outer" Property="BorderBrush" Value="#E53E3E"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -124,52 +165,130 @@
             </Setter>
         </Style>
 
-        <!-- Estilo moderno do ComboBox -->
+        <!-- Variante grande -->
+        <Style x:Key="ModernTextBox.Large" BasedOn="{StaticResource ModernTextBox}" TargetType="TextBox">
+            <Setter Property="FontSize" Value="36"/>
+            <Setter Property="Height" Value="64"/>
+            <Setter Property="Padding" Value="10,8"/>
+        </Style>
+
+        <!-- COMBOBOX: seta gira via Storyboard (sem Setter em subpropriedade) -->
         <Style x:Key="ModernComboBox" TargetType="ComboBox">
             <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#E2E8F0"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Primary}"/>
             <Setter Property="BorderThickness" Value="0,0,0,2"/>
-            <Setter Property="Padding" Value="8,10"/>
+            <Setter Property="Padding" Value="8,8"/>
             <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Height" Value="42"/>
+            <Setter Property="Height" Value="44"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel/>
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
                         <Grid>
-                            <Border Background="{TemplateBinding Background}"
+                            <Border x:Name="Outer"
+                                    Background="{TemplateBinding Background}"
                                     BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="0">
-                                <Grid>
-                                    <ContentPresenter x:Name="ContentSite"
-                                                    Margin="{TemplateBinding Padding}"
-                                                    VerticalAlignment="Center"
-                                                    Content="{TemplateBinding SelectionBoxItem}"/>
-                                    <Path x:Name="Arrow"
-                                          HorizontalAlignment="Right"
-                                          VerticalAlignment="Center"
-                                          Margin="0,0,12,0"
-                                          Data="M 0 0 L 4 4 L 8 0 Z"
-                                          Fill="#718096"/>
-                                </Grid>
-                            </Border>
-                            <Popup x:Name="Popup"
+                                    BorderThickness="{TemplateBinding BorderThickness}"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition Width="40"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Seleção -->
+                                <ContentPresenter x:Name="ContentSite"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  VerticalAlignment="Center"
+                                                  Content="{TemplateBinding SelectionBoxItem}"/>
+
+                                <!-- Botão dropdown -->
+                                <ToggleButton x:Name="DropDownToggle"
+                                              Grid.Column="1"
+                                              Focusable="False"
+                                              Background="Transparent"
+                                              BorderThickness="0"
+                                              Cursor="Hand"
+                                              IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                              ClickMode="Press">
+                                    <Grid>
+                                        <Path x:Name="Arrow"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Data="M 0 0 L 6 6 L 12 0 Z"
+                                              Stretch="Fill"
+                                              Fill="{StaticResource InkMuted}"
+                                              Width="12" Height="6"
+                                              RenderTransformOrigin="0.5,0.5">
+                                            <Path.RenderTransform>
+                                                <RotateTransform Angle="0"/>
+                                            </Path.RenderTransform>
+                                        </Path>
+                                    </Grid>
+                                </ToggleButton>
+                            </Grid>
+
+                            <!-- Popup obrigatório -->
+                            <Popup x:Name="PART_Popup"
                                    Placement="Bottom"
-                                   IsOpen="{TemplateBinding IsDropDownOpen}">
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Fade">
                                 <Border Background="White"
-                                        BorderBrush="#E2E8F0"
+                                        BorderBrush="{StaticResource LineLight}"
                                         BorderThickness="2"
                                         CornerRadius="8"
-                                        MinWidth="{TemplateBinding ActualWidth}">
-                                    <ScrollViewer>
-                                        <StackPanel IsItemsHost="True"/>
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ScrollViewer CanContentScroll="True">
+                                        <ItemsPresenter/>
                                     </ScrollViewer>
                                 </Border>
                             </Popup>
                         </Grid>
+
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsFocused" Value="True">
-                                <Setter Property="BorderBrush" Value="#2E7BDB"/>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Outer" Property="BorderBrush" Value="{StaticResource PrimaryDark}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Outer" Property="BorderBrush" Value="{StaticResource PrimaryDark}"/>
+                            </Trigger>
+
+                            <!-- Gira a seta usando Storyboard (sem Setter de subpropriedade) -->
+                            <Trigger SourceName="DropDownToggle" Property="IsChecked" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Arrow"
+                                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                             To="180" Duration="0:0:0.10" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Arrow"
+                                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                             To="0" Duration="0:0:0.10" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Outer" Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                            <Trigger Property="Validation.HasError" Value="True">
+                                <Setter TargetName="Outer" Property="BorderBrush" Value="#E53E3E"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -177,26 +296,26 @@
             </Setter>
         </Style>
 
-        <!-- Estilo moderno do CheckBox -->
+        <!-- CheckBox -->
         <Style x:Key="ModernCheckBox" TargetType="CheckBox">
             <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Foreground" Value="#2D3748"/>
+            <Setter Property="Foreground" Value="{StaticResource Ink}"/>
             <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Margin" Value="0,8,0,0"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
                         <StackPanel Orientation="Horizontal">
                             <Border x:Name="CheckBorder"
-                                    Width="20"
-                                    Height="20"
+                                    Width="20" Height="20"
                                     Background="White"
-                                    BorderBrush="#E2E8F0"
+                                    BorderBrush="{StaticResource LineLight}"
                                     BorderThickness="2"
                                     CornerRadius="4"
                                     Margin="0,0,8,0">
                                 <Path x:Name="CheckMark"
                                       Data="M 3 8 L 7 12 L 13 4"
-                                      Stroke="#2E7BDB"
+                                      Stroke="{StaticResource Primary}"
                                       StrokeThickness="2"
                                       Visibility="Collapsed"/>
                             </Border>
@@ -206,10 +325,13 @@
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
                                 <Setter TargetName="CheckBorder" Property="Background" Value="#F0F8FF"/>
-                                <Setter TargetName="CheckBorder" Property="BorderBrush" Value="#2E7BDB"/>
+                                <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource Primary}"/>
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="CheckBorder" Property="BorderBrush" Value="#2E7BDB"/>
+                                <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource Primary}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="CheckBorder" Property="Opacity" Value="0.6"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -217,39 +339,34 @@
             </Setter>
         </Style>
 
-        <!-- Estilo do card de informação -->
+        <!-- Cards -->
         <Style x:Key="InfoCard" TargetType="Border">
-            <Setter Property="Background" Value="#F8FBFF"/>
-            <Setter Property="BorderBrush" Value="#E8F0FE"/>
+            <Setter Property="Background" Value="{StaticResource CardBg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardLine}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="12"/>
             <Setter Property="Padding" Value="16"/>
+            <Setter Property="Margin" Value="0,12,0,0"/>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="#E2E8F0" 
-                                      Direction="270" 
-                                      ShadowDepth="2" 
-                                      BlurRadius="8" 
-                                      Opacity="0.3"/>
+                    <DropShadowEffect Color="#E2E8F0" Direction="270" ShadowDepth="2" BlurRadius="8" Opacity="0.3"/>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <!-- Estilo do progresso -->
+        <!-- ProgressBar -->
         <Style x:Key="ModernProgressBar" TargetType="ProgressBar">
             <Setter Property="Height" Value="8"/>
-            <Setter Property="Background" Value="#E2E8F0"/>
-            <Setter Property="Foreground" Value="#2E7BDB"/>
+            <Setter Property="Background" Value="{StaticResource LineLight}"/>
+            <Setter Property="Foreground" Value="{StaticResource Primary}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ProgressBar">
-                        <Border Background="{TemplateBinding Background}"
-                                CornerRadius="4">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4">
                             <Rectangle x:Name="PART_Track"
                                        Fill="{TemplateBinding Foreground}"
                                        HorizontalAlignment="Left"
-                                       RadiusX="4"
-                                       RadiusY="4"/>
+                                       RadiusX="4" RadiusY="4"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
@@ -257,8 +374,8 @@
         </Style>
     </Window.Resources>
 
-    <!-- Conteúdo principal com gradiente sutil -->
-    <Border>
+    <!-- Fundo com gradiente sutil -->
+    <Border Margin="0,0,0,0">
         <Border.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                 <GradientStop Color="White" Offset="0"/>
@@ -266,7 +383,7 @@
             </LinearGradientBrush>
         </Border.Background>
 
-        <Grid Margin="32,24">
+        <Grid Margin="28,24,26,66">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition/>
@@ -274,68 +391,60 @@
             </Grid.RowDefinitions>
 
             <!-- Header -->
-            <TextBlock Grid.Row="0" 
-                       Text="Configuração Manual de Dados" 
-                       Style="{StaticResource HeaderText}"
-                       FontSize="18"
-                       Margin="0,0,0,20"/>
+            <TextBlock Grid.Row="0"
+                       Text="Configuração Manual de Dados"
+                       Style="{StaticResource HeaderText}"/>
 
             <!-- Conteúdo -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,37">
                 <StackPanel>
-                    <!-- OS Completa -->
-                    <TextBlock Text="OS Completa (Somente Leitura)" 
-                               Style="{StaticResource LabelText}"/>
-                    <TextBox x:Name="TxtOSFull" 
-                             IsReadOnly="True" 
-                             Style="{StaticResource ModernTextBox}"/>
+                    
 
-                    <!-- ID SIGFI -->
-                    <TextBlock Text="ID SIGFI" 
-                               Style="{StaticResource LabelText}"/>
-                    <TextBox x:Name="TxtIdSigfi" 
+                    <!-- ID SIGFI (variante grande) -->
+                    <TextBlock Style="{StaticResource LabelText}">
+                        <Run Text="ID SIGFI"/>
+                        <Run Text=" (preencha apenas esse campo com o ID do cliente)"/>
+                    </TextBlock>
+                    <TextBox x:Name="TxtIdSigfi"
                              Style="{StaticResource ModernTextBox}"
-                             TextChanged="TxtIdSigfi_TextChanged"/>
+                             Tag="Ex.: 123456"
+                             TextChanged="TxtIdSigfi_TextChanged" Height="74"/>
+                      <!-- Rota -->
 
-                    <!-- Rota -->
-                    <TextBlock Text="Rota" 
-                               Style="{StaticResource LabelText}"/>
-                    <ComboBox x:Name="CmbRota" 
+        
+                    <TextBlock Text="Rota" Style="{StaticResource LabelText}"/>
+                    <ComboBox x:Name="CmbRota"
                               Style="{StaticResource ModernComboBox}"
-                              SelectionChanged="CmbRota_Changed"/>
-
-                    <!-- CheckBox -->
-                    <CheckBox x:Name="Chk160" 
-                              Content="Sistema SIGFI 160" 
+                              Width="auto"
+                              SelectionChanged="CmbRota_Changed"/>            <!-- Check -->
+                    <CheckBox x:Name="Chk160"
+                              Content="Sistema SIGFI 160"
                               Style="{StaticResource ModernCheckBox}"
-                              Margin="0,20,0,0"
-                              Checked="Chk160_Checked" 
+                              Checked="Chk160_Checked"
                               Unchecked="Chk160_Checked"/>
 
-                    <!-- Card de informações do cliente -->
-                    <Border Style="{StaticResource InfoCard}" 
-                            Margin="0,20,0,0">
+                    <!-- Card de informações -->
+                    <Border Style="{StaticResource InfoCard}">
                         <StackPanel>
-                            <TextBlock Text="Informações do Cliente" 
+                            <TextBlock Text="Informações do Cliente"
                                        Style="{StaticResource LabelText}"
                                        Margin="0,0,0,8"/>
-                            <Label x:Name="LblCliente" 
+                            <Label x:Name="LblCliente"
                                    Content="Digite o ID SIGFI para buscar automaticamente..."
                                    FontSize="13"
-                                   Foreground="#718096"
+                                   Foreground="{StaticResource InkMuted}"
                                    Padding="0"/>
                         </StackPanel>
                     </Border>
 
-                    <!-- Progresso de renomeação -->
-                    <Border x:Name="RenBox" 
+                    <!-- Progresso -->
+                    <Border x:Name="RenBox"
                             Style="{StaticResource InfoCard}"
-                            Margin="0,20,0,0" 
-                            Visibility="Collapsed"
                             Background="#FFF8E1"
-                            BorderBrush="#FFE0B2">
+                            BorderBrush="#FFE0B2"
+                            Visibility="Collapsed">
                         <StackPanel>
-                            <TextBlock Text="Processando arquivos..." 
+                            <TextBlock Text="Processando arquivos..."
                                        FontSize="14"
                                        FontWeight="SemiBold"
                                        Foreground="#E65100"
@@ -345,37 +454,36 @@
                                     <ColumnDefinition/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <ProgressBar x:Name="RenProgress" 
-                                           Grid.Column="0"
-                                           Style="{StaticResource ModernProgressBar}"
-                                           Minimum="0" 
-                                           Maximum="100"/>
-                                <TextBlock x:Name="RenPercent" 
-                                         Grid.Column="1" 
-                                         Margin="12,0,0,0" 
-                                         VerticalAlignment="Center"
-                                         FontWeight="SemiBold"
-                                         FontSize="12"
-                                         Foreground="#E65100"/>
+                                <ProgressBar x:Name="RenProgress"
+                                             Grid.Column="0"
+                                             Style="{StaticResource ModernProgressBar}"
+                                             Minimum="0" Maximum="100"/>
+                                <TextBlock x:Name="RenPercent"
+                                           Grid.Column="1"
+                                           Margin="12,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontWeight="SemiBold"
+                                           FontSize="12"
+                                           Foreground="#E65100"/>
                             </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- Rodapé com botões -->
-            <StackPanel Grid.Row="2" 
-                        Orientation="Horizontal" 
-                        HorizontalAlignment="Right" 
-                        Margin="0,24,0,0">
-                <Button x:Name="BtnCancel" 
-                        Content="Cancelar" 
+            <!-- Rodapé -->
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,20,0,0">
+                <Button x:Name="BtnCancel"
+                        Content="Cancelar"
                         Style="{StaticResource SecondaryButton}"
-                        Margin="0,0,12,0" 
+                        Margin="0,0,12,0"
                         Click="Cancel_Click"/>
-                <Button x:Name="BtnOk" 
-                        Content="Confirmar" 
-                        Style="{StaticResource PrimaryButton}" 
+                <Button x:Name="BtnOk"
+                        Content="Confirmar"
+                        Style="{StaticResource PrimaryButton}"
                         Click="Ok_Click"/>
             </StackPanel>
         </Grid>

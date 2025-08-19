@@ -57,8 +57,6 @@ namespace leituraWPF
             _allowAnyId = allowAnyId;
             _records = records?.ToList() ?? new List<ClientRecord>();
 
-            TxtOSFull.Text = OSFull;
-
             foreach (var r in rotas.Distinct().OrderBy(x => x))
                 CmbRota.Items.Add(new ComboBoxItem { Content = r });
 

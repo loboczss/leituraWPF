@@ -20,12 +20,13 @@ namespace leituraWPF
 {
     public partial class MainWindow : Window, ILogSink, IProgress<double>
     {
+        private const int MaxLogItems = 1000;
+
         private readonly TokenService _tokenService;
         private readonly GraphDownloader _downloader;
         private readonly JsonReaderService _jsonReader;
         private readonly RenamerService _renamer = new RenamerService();
         private readonly InstallationRenamerService _installRenamer = new InstallationRenamerService();
-        private readonly InstalacaoService _instalacao = new InstalacaoService();
         private readonly BackupUploaderService _backup;
 
         private readonly AtualizadorService _atualizador = new AtualizadorService();
@@ -39,6 +40,7 @@ namespace leituraWPF
         private readonly Funcionario? _funcionario;
         private readonly SemaphoreSlim _syncMutex = new(1, 1);
         private readonly PeriodicTimer _autoSyncTimer = new(TimeSpan.FromMinutes(10));
+        private readonly CancellationTokenSource _cts = new();
 
         public MainWindow(Funcionario? funcionario = null)
         {
@@ -83,27 +85,43 @@ namespace leituraWPF
                 {
                     TxtSyncStatus.Text = $"Pendentes: {pend} | Enviados (sessão): {sent}";
                     TxtLastUpdate.Text = _backup.LastRunUtc is { } t
-                        ? $"Última sync: {t:dd/MM HH:mm}" : "Última sync: —";
+                        ? $"Última sync: {t.ToLocalTime():dd/MM HH:mm}"
+                        : "Última sync: —";
                 });
             };
 
             _backup.Start();
 
-            // inicia sincronização automática a cada 10 minutos
+            // inicia sincronização automática a cada 10 minutos (cancelável)
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    while (await _autoSyncTimer.WaitForNextTickAsync())
+                    while (await _autoSyncTimer.WaitForNextTickAsync(_cts.Token))
                     {
                         await SyncAndBackupAsync();
                     }
                 }
-                catch { /* timer disposed */ }
-            });
+                catch (OperationCanceledException) { /* janela fechando: ok */ }
+                catch (ObjectDisposedException) { /* timer disposed: ok */ }
+            }, _cts.Token);
 
             // No carregamento: checa atualização (com timeout) e prepara o cache local
             this.Loaded += MainWindow_Loaded;
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            try
+            {
+                _cts.Cancel();
+                _autoSyncTimer.Dispose();
+                // Se seu BackupUploaderService tiver Stop(), chame aqui:
+                // _backup.Stop();
+                // Removido cast para IDisposable (classe não implementa IDisposable)
+            }
+            catch { /* noop */ }
+            base.OnClosed(e);
         }
 
         public void RunManualSync()
@@ -123,9 +141,11 @@ namespace leituraWPF
 
                 try
                 {
+                    // Aqui você decide o que baixar no sync periódico.
+                    // Exemplo: deixar instalação AC/MT sempre atualizada.
                     var downloaded = await _downloader.DownloadMatchingJsonAsync(
                         _downloadsDir,
-                        extraQueries: new[] { "Instalacao_AC" }
+                        extraQueries: new[] { "Instalacao_AC", "Instalacao_MT" }
                     );
 
                     var stats = SyncStatsService.Load();
@@ -148,6 +168,7 @@ namespace leituraWPF
                 catch (Exception ex)
                 {
                     Log($"[FATAL] {ex.Message}");
+                    Log(ex.ToString());
                     SetStatus("Falha.");
                 }
                 finally
@@ -169,15 +190,13 @@ namespace leituraWPF
 
         private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)
         {
-            // roda só uma vez
             if (!_checkedUpdateAtStartup)
             {
                 _checkedUpdateAtStartup = true;
-                // Checa atualização sem travar UI
                 _ = CheckUpdatesOnStartupAsync();
             }
 
-            // Prepara cache local para buscas/renomeação offline
+            // Cache de manutenção (não usado no fluxo 0)
             await EnsureLocalCacheAsync();
         }
 
@@ -188,14 +207,12 @@ namespace leituraWPF
                 var (localV, remoteV) = await _atualizador.GetVersionsAsync();
                 if (remoteV <= localV) return; // já está atualizado
 
-                // Prompt com timeout de 60s: se não responder, atualiza
                 var prompt = new UpdatePromptWindow(localV, remoteV, timeoutSeconds: 60)
                 {
                     Owner = this
                 };
                 var result = prompt.ShowDialog();
 
-                // result == true (atualizar agora) / result == null (auto-timeout) ⇒ atualiza
                 if (result != false)
                 {
                     var zip = await _atualizador.DownloadLatestReleaseAsync(preferNameContains: null);
@@ -207,7 +224,6 @@ namespace leituraWPF
 
                     var bat = _atualizador.CreateUpdateBatch(zip);
 
-                    // dispara o .bat e encerra para permitir cópia/substituição
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                     {
                         FileName = "cmd.exe",
@@ -222,7 +238,6 @@ namespace leituraWPF
             catch (Exception ex)
             {
                 Log($"[WARN] Falha ao checar/atualizar: {ex.Message}");
-                // segue a vida; não quebra o startup
             }
         }
 
@@ -309,6 +324,7 @@ namespace leituraWPF
                 catch (Exception ex)
                 {
                     Log($"[FATAL] Falha ao carregar cache local: {ex.Message}");
+                    Log(ex.ToString());
                 }
             });
         }
@@ -341,10 +357,9 @@ namespace leituraWPF
         {
             try
             {
-                await EnsureLocalCacheAsync();
-
                 var uf = GetSelectedUf();
                 var raw = (txtNumos.Text ?? "").Trim();
+
                 if (string.IsNullOrEmpty(raw))
                 {
                     WpfMessageBox.Show("Preencha o NumOS (obrigatório) antes de processar.",
@@ -353,19 +368,28 @@ namespace leituraWPF
                     return;
                 }
 
-                // ===== Caso especial: "0" → fluxo de INSTALAÇÃO via Fallback (com progresso) =====
+                // ===== FLUXO 0 → INSTALAÇÃO: ler APENAS arquivo de instalação e baixar conforme necessário =====
                 if (raw == "0")
                 {
                     SetStatus("Atualizando arquivo de instalação...");
                     progress.Visibility = Visibility.Visible;
                     progress.IsIndeterminate = true;
 
-                    // Baixa/atualiza "Instalacao_AC"
-                    await _downloader.DownloadMatchingJsonAsync(_downloadsDir, extraQueries: new[] { "Instalacao_AC" });
+                    // Baixa/atualiza SOMENTE “Instalacao_{UF}”
+                    await _downloader.DownloadMatchingJsonAsync(_downloadsDir, extraQueries: new[] { $"Instalacao_{uf}" });
 
-                    // Abre o fallback permitindo ID livre; FallbackWindow executa a renomeação e mostra progresso
-                    var rotas = _cacheRecords.Select(r => r.Rota).Where(s => !string.IsNullOrWhiteSpace(s));
-                    var fb = new FallbackWindow($"{uf}0", rotas, uf, _cacheRecords, _renamer, _sourceFolderPath, allowAnyId: true)
+                    // Lê as ROTAS direto do(s) arquivo(s) de instalação (sem tocar no cache de manutenção)
+                    var rotasInstalacao = await LoadRotasFromInstallationAsync(uf);
+
+                    // Abre o fallback permitindo ID livre; usa o RENAMER padrão para manter compatibilidade de tipos
+                    // (Se no futuro você ajustar o FallbackWindow para aceitar um IRenamer, troque para _installRenamer)
+                    var fb = new FallbackWindow($"{uf}0",
+                                                rotasInstalacao,
+                                                uf,
+                                                new List<ClientRecord>(), // não usamos cache de manutenção aqui
+                                                _renamer,                  // mantém compatibilidade com assinatura atual
+                                                _sourceFolderPath,
+                                                allowAnyId: true)
                     {
                         Owner = this
                     };
@@ -385,17 +409,22 @@ namespace leituraWPF
                     return;
                 }
 
-                // ===== Caminho NORMAL: manutenção =====
+                // ===== Fluxo NORMAL (≠ 0) → MANUTENÇÃO =====
+                await EnsureLocalCacheAsync(); // só carrega cache de manutenção quando != 0
+
                 var numosFull = BuildFullNumos(); // ex.: "AC202400012345"
                 var record = _cacheRecords.FirstOrDefault(r =>
                     string.Equals(r.NumOS, numosFull, StringComparison.OrdinalIgnoreCase));
 
                 if (record == null)
                 {
-                    Log($"[WARN] NumOS \"{numosFull}\" não encontrado no cache. Abrindo fallback.");
+                    Log($"[WARN] NumOS \"{numosFull}\" não encontrado no cache. Abrindo fallback de manutenção.");
 
-                    // Fallback "assistido" (ele mesmo renomeia com progresso)
-                    var rotas = _cacheRecords.Select(r => r.Rota).Where(s => !string.IsNullOrWhiteSpace(s));
+                    var rotas = _cacheRecords
+                        .Select(r => r.Rota)
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Distinct(StringComparer.OrdinalIgnoreCase);
+
                     var fb = new FallbackWindow(numosFull, rotas, uf, _cacheRecords, _renamer, _sourceFolderPath, allowAnyId: false)
                     {
                         Owner = this
@@ -413,7 +442,7 @@ namespace leituraWPF
                     return;
                 }
 
-                // Achou o record no cache → renomeia aqui mesmo
+                // Achou o record no cache → renomeia aqui mesmo (manutenção)
                 if (!await EnsureSourceFolderHasFilesAsync()) return;
 
                 btnProcessar.IsEnabled = false;
@@ -461,7 +490,10 @@ namespace leituraWPF
                 if (!string.IsNullOrWhiteSpace(destino) && Directory.Exists(destino))
                     System.Diagnostics.Process.Start("explorer.exe", destino);
             }
-            catch { /* noop */ }
+            catch (Exception ex)
+            {
+                Log($"[WARN] Não foi possível abrir a pasta destino: {ex.Message}");
+            }
         }
 
         private async Task<bool> EnsureSourceFolderHasFilesAsync()
@@ -517,6 +549,9 @@ namespace leituraWPF
             void Append()
             {
                 _logItems.Add(new LogEntry { Hora = DateTime.Now, Tipo = tipo, Emoji = emoji, Mensagem = message });
+                if (_logItems.Count > MaxLogItems)
+                    _logItems.RemoveAt(0);
+
                 txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {tipo} {message}{Environment.NewLine}");
                 txtLog.ScrollToEnd();
                 if (GridLog.Items.Count > 0) GridLog.ScrollIntoView(GridLog.Items[GridLog.Items.Count - 1]);
@@ -539,6 +574,50 @@ namespace leituraWPF
                     progress.Value = value;
                 });
             }
+        }
+
+        /* ---- Helpers específicos de instalação ---- */
+        private async Task<IEnumerable<string>> LoadRotasFromInstallationAsync(string uf)
+        {
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    var pattern = $"Instalacao_{uf}*.json";
+                    var files = Directory.EnumerateFiles(_downloadsDir, pattern, SearchOption.TopDirectoryOnly).ToList();
+                    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var file in files)
+                    {
+                        try
+                        {
+                            var arr = _jsonReader.LoadJArrayFlexible(file);
+                            foreach (var obj in arr.OfType<JObject>())
+                            {
+                                var rota =
+                                    (string?)obj["Rota"] ??
+                                    (string?)obj["rota"] ??
+                                    (string?)obj.SelectToken("ROTA") ??
+                                    (string?)obj.SelectToken("rota.nome");
+
+                                if (!string.IsNullOrWhiteSpace(rota))
+                                    set.Add(rota.Trim());
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"[WARN] Falha ao ler rotas do arquivo de instalação '{Path.GetFileName(file)}': {ex.Message}");
+                        }
+                    }
+
+                    return set;
+                }
+                catch (Exception ex)
+                {
+                    Log($"[WARN] Falha ao localizar arquivos de instalação ({uf}): {ex.Message}");
+                    return Enumerable.Empty<string>();
+                }
+            });
         }
     }
 }
