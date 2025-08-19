@@ -86,7 +86,8 @@ namespace leituraWPF
                         if (!main.IsVisible) main.Show();
                         main.Activate();
                     }),
-                    sync: () => main.RunManualSync());
+                    sync: () => main.RunManualSync(),
+                    exit: () => app.Dispatcher.Invoke(() => main.ForceClose()));
                 app.Run(main);
             }
         }

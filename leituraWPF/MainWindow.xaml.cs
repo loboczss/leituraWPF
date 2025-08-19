@@ -14,6 +14,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Reflection;
+using System.ComponentModel;
 using WpfMessageBox = System.Windows.MessageBox;
 
 namespace leituraWPF
@@ -42,6 +43,7 @@ namespace leituraWPF
         private readonly PeriodicTimer _autoSyncTimer = new(TimeSpan.FromMinutes(10));
         private readonly CancellationTokenSource _cts = new();
         private bool _suppressLogs = false;
+        private bool _allowClose = false;
 
         public MainWindow(Funcionario? funcionario = null)
         {
@@ -116,6 +118,17 @@ namespace leituraWPF
             this.Loaded += MainWindow_Loaded;
         }
 
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            if (!_allowClose)
+            {
+                e.Cancel = true;
+                Hide();
+                return;
+            }
+            base.OnClosing(e);
+        }
+
         protected override void OnClosed(EventArgs e)
         {
             try
@@ -128,6 +141,12 @@ namespace leituraWPF
             }
             catch { /* noop */ }
             base.OnClosed(e);
+        }
+
+        public void ForceClose()
+        {
+            _allowClose = true;
+            Close();
         }
 
         public void RunManualSync()
