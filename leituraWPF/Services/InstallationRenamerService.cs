@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
 
 namespace leituraWPF.Services
 {
@@ -105,11 +106,27 @@ namespace leituraWPF.Services
 
                 if (isSigfi160)
                 {
-                    if (controllers.Count != 2) throw new FileNotFoundException("[INSTALAÇÃO SIGFI160] Requer 2 controladores.");
+                    if (controllers.Count != 2)
+                    {
+                        MessageBox.Show(
+                            "[INSTALAÇÃO SIGFI160] Requer 2 controladores.",
+                            "Aviso",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
                 }
                 else
                 {
-                    if (controllers.Count < 1) throw new FileNotFoundException("[INSTALAÇÃO] Requer pelo menos 1 controlador.");
+                    if (controllers.Count < 1)
+                    {
+                        MessageBox.Show(
+                            "[INSTALAÇÃO] Requer pelo menos 1 controlador.",
+                            "Aviso",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
                 }
 
                 string nomeBase = Sanitize(string.Join("_", new[] { (uf ?? "").ToUpperInvariant(), nomeCliente ?? "", idSigfi ?? "", "INSTALACAO" }));

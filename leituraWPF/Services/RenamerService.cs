@@ -255,19 +255,40 @@ namespace leituraWPF.Services
                 {
                     reqCtrl = 1;
                     if (controllers.Count != 1)
-                        throw new FileNotFoundException("[INTELBRAS] Requerido: 1 controlador.");
+                    {
+                        MessageBox.Show(
+                            "[INTELBRAS] Requerido: 1 controlador.",
+                            "Aviso",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
                 }
                 else if (sistema == "HOPPECKE" && isSistema160)
                 {
                     reqCtrl = 2;
                     if (controllers.Count != 2)
-                        throw new FileNotFoundException("[HOPPECKE 160] Requerido: 2 controladores.");
+                    {
+                        MessageBox.Show(
+                            "[HOPPECKE 160] Requerido: 2 controladores.",
+                            "Aviso",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
                 }
                 else
                 {
                     reqCtrl = 1; // genérico
                     if (controllers.Count < 1)
-                        throw new FileNotFoundException("Requerido: pelo menos 1 controlador.");
+                    {
+                        MessageBox.Show(
+                            "Requerido: pelo menos 1 controlador.",
+                            "Aviso",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
                 }
 
                 // 6) Nome base
