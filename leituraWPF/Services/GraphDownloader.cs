@@ -24,6 +24,11 @@ namespace leituraWPF.Services
         private bool _disposed;
         private int _downloadedCount;
 
+        // Controle de erros para evitar spam no log
+        private readonly HashSet<string> _loggedErrors = new();
+        private int _consecutiveFailures;
+        private const int MaxConsecutiveFailures = 10;
+
         // Record com nomes exatos (maiúsculas importam para named args)
         private sealed record DriveEntry(string DriveId, string ItemId, string Name, string ETag);
 
@@ -73,37 +78,55 @@ namespace leituraWPF.Services
             IEnumerable<string>? extraQueries,
             CancellationToken ct = default)
         {
-            ThrowIfDisposed();
-            ValidateTargetFolder(targetFolder);
-
-            Directory.CreateDirectory(targetFolder);
-
-            await SetupAuthenticationAsync().ConfigureAwait(false);
-
-            var wanted = GetWantedPrefixes(extraQueries);
-            if (wanted.Length == 0)
+            try
             {
-                _log.Log("[INFO] Nenhum prefixo para buscar (WantedPrefixes vazio e sem extras).");
-                return new List<string>();
+                ThrowIfDisposed();
+                ValidateTargetFolder(targetFolder);
+
+                Directory.CreateDirectory(targetFolder);
+
+                await SetupAuthenticationAsync().ConfigureAwait(false);
+
+                var wanted = GetWantedPrefixes(extraQueries);
+                if (wanted.Length == 0)
+                {
+                    _log.Log("[INFO] Nenhum prefixo configurado para busca.");
+                    return new List<string>();
+                }
+
+                var entries = await GetDriveEntriesAsync(wanted, ct).ConfigureAwait(false);
+                _log.Log($"[INFO] Encontrados {entries.Count} arquivos candidatos.");
+                _progress?.Report(35);
+
+                // Reset contador para novos downloads
+                _downloadedCount = 0;
+
+                var toDownload = FilterEntriesForDownload(entries, wanted, targetFolder);
+                if (_cfg.SkipUnchanged && entries.Count > toDownload.Count)
+                    _log.Log($"[INFO] {entries.Count - toDownload.Count} arquivos já estão atualizados.");
+
+                var results = await DownloadFilesInParallelAsync(toDownload, targetFolder, ct).ConfigureAwait(false);
+
+                _progress?.Report(100);
+                _log.Log($"[OK] Download concluído: {results.Count} arquivos processados.");
+
+                return results;
             }
-
-            var entries = await GetDriveEntriesAsync(wanted, ct).ConfigureAwait(false);
-            _log.Log($"[INFO] Arquivos JSON candidatos: {entries.Count}.");
-            _progress?.Report(35);
-
-            // Reset contador para novos downloads
-            _downloadedCount = 0;
-
-            var toDownload = FilterEntriesForDownload(entries, wanted, targetFolder);
-            if (_cfg.SkipUnchanged)
-                _log.Log($"[INFO] Ignorando inalterados (ETag): {entries.Count - toDownload.Count}.");
-
-            var results = await DownloadFilesInParallelAsync(toDownload, targetFolder, ct).ConfigureAwait(false);
-
-            _progress?.Report(97);
-            _log.Log($"[OK] Downloads finalizados. Novos/atualizados: {results.Count}.");
-
-            return results;
+            catch (OperationCanceledException)
+            {
+                _log.Log("[INFO] Operação cancelada pelo usuário.");
+                throw;
+            }
+            catch (Exception ex) when (IsCriticalException(ex))
+            {
+                LogUniqueError($"CRITICAL", ex.Message);
+                throw; // Re-throw exceções críticas
+            }
+            catch (Exception ex)
+            {
+                LogUniqueError($"ERROR", ex.Message);
+                return new List<string>(); // Retorna lista vazia em caso de erro não-crítico
+            }
         }
 
         // =========================
@@ -132,8 +155,15 @@ namespace leituraWPF.Services
 
         private async Task SetupAuthenticationAsync()
         {
-            var token = await _tokenService.GetTokenAsync().ConfigureAwait(false);
-            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            try
+            {
+                var token = await _tokenService.GetTokenAsync().ConfigureAwait(false);
+                _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Falha na autenticação", ex);
+            }
         }
 
         private string[] GetWantedPrefixes(IEnumerable<string>? extraQueries)
@@ -148,27 +178,33 @@ namespace leituraWPF.Services
 
         private async Task<List<DriveEntry>> GetDriveEntriesAsync(string[] wanted, CancellationToken ct)
         {
-            if (_cfg.ForceDriveSearch)
+            try
             {
-                _log.Log("[INFO] ForceDriveSearch habilitado: usando busca no drive.");
-                var driveId = await GetDriveIdFromListAsync(ct).ConfigureAwait(false);
-                return await SearchInDriveByPrefixesAsync(driveId, wanted, ct).ConfigureAwait(false);
+                if (_cfg.ForceDriveSearch)
+                {
+                    var driveId = await GetDriveIdFromListAsync(ct).ConfigureAwait(false);
+                    return await SearchInDriveByPrefixesAsync(driveId, wanted, ct).ConfigureAwait(false);
+                }
+
+                // Tenta OData na List + fallback para Drive
+                _http.DefaultRequestHeaders.TryAddWithoutValidation("Prefer", "HonorNonIndexedQueriesWarningMayFailRandomly");
+
+                var entries = await TryListQueryAsync("FileLeafRef", wanted, ct).ConfigureAwait(false)
+                           ?? await TryListQueryAsync("LinkFilename", wanted, ct).ConfigureAwait(false);
+
+                if (entries is null)
+                {
+                    var driveId = await GetDriveIdFromListAsync(ct).ConfigureAwait(false);
+                    entries = await SearchInDriveByPrefixesAsync(driveId, wanted, ct).ConfigureAwait(false);
+                }
+
+                return entries ?? new List<DriveEntry>();
             }
-
-            // Tenta OData na List + fallback para Drive
-            _http.DefaultRequestHeaders.TryAddWithoutValidation("Prefer", "HonorNonIndexedQueriesWarningMayFailRandomly");
-
-            var entries = await TryListQueryAsync("FileLeafRef", wanted, ct).ConfigureAwait(false)
-                       ?? await TryListQueryAsync("LinkFilename", wanted, ct).ConfigureAwait(false);
-
-            if (entries is null)
+            catch (Exception ex)
             {
-                _log.Log("[WARN] Filtro OData na lista falhou. Usando fallback de busca no drive (search).");
-                var driveId = await GetDriveIdFromListAsync(ct).ConfigureAwait(false);
-                entries = await SearchInDriveByPrefixesAsync(driveId, wanted, ct).ConfigureAwait(false);
+                LogUniqueError("SEARCH", $"Falha na busca de arquivos: {ex.Message}");
+                return new List<DriveEntry>(); // Retorna lista vazia em caso de falha
             }
-
-            return entries ?? new List<DriveEntry>();
         }
 
         private List<DriveEntry> FilterEntriesForDownload(List<DriveEntry> entries, string[] wanted, string targetFolder)
@@ -225,7 +261,12 @@ namespace leituraWPF.Services
                 var url = $"https://graph.microsoft.com/v1.0/drives/{entry.DriveId}/items/{entry.ItemId}/content";
 
                 using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-                await EnsureSuccessOrThrowAsync(response, $"GET content '{entry.Name}'").ConfigureAwait(false);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    HandleHttpError(response, entry.Name);
+                    return;
+                }
 
                 await WriteFileAsync(response, destinationPath, ct).ConfigureAwait(false);
 
@@ -236,11 +277,31 @@ namespace leituraWPF.Services
                     results.Add(destinationPath);
                 }
 
+                // Reset contador de falhas consecutivas em caso de sucesso
+                Interlocked.Exchange(ref _consecutiveFailures, 0);
                 ReportProgress(total);
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
-                _log.Log($"[ERRO] Download '{entry.Name}': {ex.Message}");
+                // Silencioso para cancelamentos
+                throw;
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("timeout"))
+            {
+                LogUniqueError("TIMEOUT", $"Timeout no download de '{entry.Name}'");
+            }
+            catch (Exception ex) when (!IsCriticalException(ex))
+            {
+                var failures = Interlocked.Increment(ref _consecutiveFailures);
+                if (failures <= 3) // Log apenas as primeiras 3 falhas
+                {
+                    LogUniqueError($"DOWNLOAD_{entry.Name}", ex.Message);
+                }
+
+                if (failures >= MaxConsecutiveFailures)
+                {
+                    _log.Log("[WARN] Muitas falhas consecutivas - possível problema de conectividade.");
+                }
             }
             finally
             {
@@ -279,23 +340,15 @@ namespace leituraWPF.Services
                           $"&$top=2000";
 
                 var listItems = await GetPagedAsync(url, ct).ConfigureAwait(false);
-                _log.Log($"[INFO] ListItem OK com '{fieldName}'. Itens: {listItems.Count}");
-
                 return ExtractDriveEntriesFromListItems(listItems);
             }
-            catch (HttpRequestException ex)
+            catch (OperationCanceledException)
             {
-                _log.Log($"[WARN] ListItem com '{fieldName}' falhou: {ex.Message}");
-                return null;
+                throw;
             }
-            catch (GraphBadRequestException ex)
+            catch (Exception ex) when (!IsCriticalException(ex))
             {
-                _log.Log($"[WARN] 400 ListItem '{fieldName}': {ex.Message}");
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _log.Log($"[WARN] ListItem '{fieldName}' inesperado: {ex.Message}");
+                // Log silencioso - método é usado como tentativa
                 return null;
             }
         }
@@ -367,12 +420,15 @@ namespace leituraWPF.Services
                     .Where(x => !string.IsNullOrWhiteSpace(x.ItemId) && !string.IsNullOrWhiteSpace(x.Name))
                     .ToList();
 
-                _log.Log($"[INFO] Search '{prefix}': {mapped.Count} itens.");
                 results.AddRange(mapped);
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
-                _log.Log($"[WARN] Search '{prefix}' falhou: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex) when (!IsCriticalException(ex))
+            {
+                LogUniqueError($"SEARCH_{prefix}", $"Busca falhou para '{prefix}': {ex.Message}");
             }
         }
 
@@ -453,11 +509,53 @@ namespace leituraWPF.Services
                 // ignore  
             }
 
-            if (resp.StatusCode == HttpStatusCode.BadRequest)
-                throw new GraphBadRequestException($"{op} retornou 400. Corpo: {Truncate(body, 500)}");
-
-            resp.EnsureSuccessStatusCode();
+            throw resp.StatusCode switch
+            {
+                HttpStatusCode.BadRequest => new GraphBadRequestException($"{op}: {Truncate(body, 200)}"),
+                HttpStatusCode.Unauthorized => new UnauthorizedAccessException($"Token inválido ou expirado: {op}"),
+                HttpStatusCode.Forbidden => new UnauthorizedAccessException($"Acesso negado: {op}"),
+                HttpStatusCode.NotFound => new FileNotFoundException($"Recurso não encontrado: {op}"),
+                HttpStatusCode.TooManyRequests => new InvalidOperationException($"Rate limit atingido: {op}"),
+                _ => new HttpRequestException($"{op} falhou com status {resp.StatusCode}")
+            };
         }
+
+        private void HandleHttpError(HttpResponseMessage response, string fileName)
+        {
+            var errorKey = $"HTTP_{response.StatusCode}";
+
+            var message = response.StatusCode switch
+            {
+                HttpStatusCode.NotFound => $"Arquivo não encontrado: {fileName}",
+                HttpStatusCode.Unauthorized => "Token de autenticação inválido",
+                HttpStatusCode.Forbidden => $"Acesso negado ao arquivo: {fileName}",
+                HttpStatusCode.TooManyRequests => "Rate limit atingido - muitas requisições",
+                _ => $"Erro HTTP {response.StatusCode} ao baixar {fileName}"
+            };
+
+            LogUniqueError(errorKey, message);
+        }
+
+        private void LogUniqueError(string errorType, string message)
+        {
+            var key = $"{errorType}:{message.GetHashCode()}";
+
+            lock (_loggedErrors)
+            {
+                if (_loggedErrors.Add(key))
+                {
+                    _log.Log($"[{errorType}] {message}");
+                }
+            }
+        }
+
+        private static bool IsCriticalException(Exception ex) =>
+            ex is OutOfMemoryException or
+                  StackOverflowException or
+                  AccessViolationException or
+                  AppDomainUnloadedException or
+                  BadImageFormatException or
+                  InvalidProgramException;
 
         private static string Truncate(string s, int max)
         {
@@ -478,8 +576,18 @@ namespace leituraWPF.Services
         {
             if (_disposed) return;
 
-            _http?.Dispose();
-            _disposed = true;
+            try
+            {
+                _http?.Dispose();
+            }
+            catch
+            {
+                // Silencioso no dispose
+            }
+            finally
+            {
+                _disposed = true;
+            }
         }
 
         private sealed class GraphBadRequestException : Exception
