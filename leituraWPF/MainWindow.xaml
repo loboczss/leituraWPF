@@ -663,8 +663,8 @@
 
                 <!-- Lado Esquerdo - Sincronização -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="btnExecutar" Content="🔄 Sincronizar Tudo" 
-                            Style="{StaticResource PrimaryButton}" Height="40" Width="160"
+                    <Button x:Name="btnExecutar" Content="🔄 Sincronizar e Enviar Backup"
+                            Style="{StaticResource PrimaryButton}" Height="40" Width="220"
                             Click="btnExecutar_Click"/>
 
                     <StackPanel Orientation="Vertical" Margin="20,0,0,0">
@@ -678,21 +678,15 @@
                 <!-- Lado Direito - Upload/Backup -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <StackPanel Orientation="Vertical" Margin="0,0,20,0" HorizontalAlignment="Right">
-                        <TextBlock x:Name="TxtSyncStatus" Text="Backup sincronizado" 
+                        <TextBlock x:Name="TxtSyncStatus" Text="Backup sincronizado"
                                    FontWeight="SemiBold" FontSize="13" Foreground="#6c757d"
                                    TextAlignment="Right"/>
-                        <TextBlock x:Name="TxtLastUpdate" Text="Última atualização: --" 
+                        <TextBlock x:Name="TxtLastUpdate" Text="Última atualização: --"
                                    FontSize="12" Foreground="#adb5bd" TextAlignment="Right"/>
                     </StackPanel>
 
-                    <StackPanel Orientation="Horizontal">
-                        <ProgressBar x:Name="UploadBar" Style="{StaticResource ModernProgressBar}"
-                                     Width="100" Margin="0,0,12,0" Visibility="Collapsed"/>
-
-                        <Button x:Name="BtnSyncAll" Content="☁️ Enviar Backups" 
-                                Style="{StaticResource PrimaryButton}" Height="40" Width="160"
-                                Click="BtnSyncAll_Click"/>
-                    </StackPanel>
+                    <ProgressBar x:Name="UploadBar" Style="{StaticResource ModernProgressBar}"
+                                 Width="100" Margin="0,0,0,0" Visibility="Collapsed"/>
                 </StackPanel>
             </Grid>
         </Border>
