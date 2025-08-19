@@ -67,9 +67,17 @@ namespace leituraWPF.Services
             {
                 try
                 {
+                    await RunCycleAsync();
                     while (await _timer.WaitForNextTickAsync())
                     {
-                        await RunCycleAsync();
+                        try
+                        {
+                            await RunCycleAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            StatusChanged?.Invoke($"[BACKUP] falha no ciclo: {ex.Message}");
+                        }
                     }
                 }
                 catch { /* timer disposed */ }
@@ -135,7 +143,16 @@ namespace leituraWPF.Services
                     return;
                 }
 
-                await EnsureFolderAsync(driveId, _cfg.BackupFolder, ct);
+                try
+                {
+                    await EnsureFolderAsync(driveId, _cfg.BackupFolder, ct);
+                }
+                catch (HttpRequestException ex)
+                {
+                    StatusChanged?.Invoke($"[BACKUP] rede indisponível: {ex.Message}");
+                    return;
+                }
+
                 var files = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).ToList();
 
                 foreach (var file in files)
@@ -195,6 +212,10 @@ namespace leituraWPF.Services
                 LastRunUtc = DateTime.UtcNow;
                 CountersChanged?.Invoke(PendingCount, UploadedCountSession);
                 StatusChanged?.Invoke($"[BACKUP] ciclo concluído: pendentes={PendingCount}, enviados(sessão)={UploadedCountSession}");
+            }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke($"[BACKUP] ciclo falhou: {ex.Message}");
             }
             finally
             {
