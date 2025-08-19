@@ -575,7 +575,7 @@
                                     </Border>
                                     <Button x:Name="btnAbrirPasta" Content="📂 Abrir Destino" 
                                             Style="{StaticResource SecondaryButton}" Height="42"
-                                            Margin="16,0,0,0" 
+                                            Margin="16,0,0,0" Visibility="Collapsed"
                                             Click="btnAbrirPasta_Click" Width="228"/>
                                 </StackPanel>
 
