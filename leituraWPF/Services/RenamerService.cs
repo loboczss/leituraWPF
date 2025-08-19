@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.VisualBasic; // para InputBox
@@ -12,8 +13,9 @@ using leituraWPF.Models;
 namespace leituraWPF.Services
 {
     /// <summary>
-    /// Renomeia e move arquivos segundo as regras fornecidas, sem logging.
-    /// Usa os dados do ClientRecord (derivados dos JSON baixados).
+    /// Renomeia e move arquivos segundo as regras fornecidas, gerando um log
+    /// em arquivo texto. Usa os dados do <see cref="ClientRecord"/> (derivados
+    /// dos JSON baixados).
     /// </summary>
     public class RenamerService
     {
@@ -155,8 +157,9 @@ namespace leituraWPF.Services
 
         #region RenameAsync
         /// <summary>
-        /// Renomeia/move arquivos de <paramref name="sourceFolder"/> para a pasta de destino,
-        /// usando dados de <paramref name="record"/>. Sem logs externos.
+        /// Renomeia/move arquivos de <paramref name="sourceFolder"/> para a pasta de
+        /// destino, usando dados de <paramref name="record"/> e gera um log
+        /// textual com informações da operação.
         /// </summary>
         public Task RenameAsync(
             string sourceFolder,
@@ -197,6 +200,22 @@ namespace leituraWPF.Services
                 string clienteDir = Path.Combine(rotaDir,
                     Sanitize($"{record.NumOS}_{record.IdSigfi}_{record.Tipo}"));
                 LastDestination = clienteDir;
+
+                // Preparação do log
+                var now = DateTime.Now;
+                var logLines = new List<string>
+                {
+                    $"Data: {now:dd/MM/yyyy}",
+                    $"Hora: {now:HH:mm:ss}",
+                    $"Usuário: {Environment.UserName}",
+                    $"Pasta de origem: {sourceFolder}",
+                    $"NOMECLIENTE: {record.NomeCliente}",
+                    $"TIPO: {record.Tipo}",
+                    $"TIPODESIGFI: {record.TipoDesigfi}",
+                    $"EMPRESA: {record.Empresa}",
+                    $"ROTA: {record.Rota}",
+                    string.Empty,
+                    "Arquivos:" }; 
 
                 // 3) Verifica destino já existente antes de criar
                 if (Directory.Exists(clienteDir) && Directory.EnumerateFileSystemEntries(clienteDir).Any())
@@ -249,7 +268,7 @@ namespace leituraWPF.Services
                 }));
 
                 // 7) Progresso (80% do total após 10%)
-                int totalSteps = controllers.Count + (inv != null ? 1 : 0) + (bat != null ? 1 : 0) + images.Count + 2;
+                int totalSteps = controllers.Count + (inv != null ? 1 : 0) + (bat != null ? 1 : 0) + images.Count + 3;
                 totalSteps = Math.Max(totalSteps, 1);
                 int done = 0;
                 void Step() => Report(10 + (++done * 80.0 / totalSteps));
@@ -270,6 +289,8 @@ namespace leituraWPF.Services
 
                     try { FileReadyForBackup?.Invoke(dst); } catch { /* ignore */ }
 
+                    logLines.Add($"{Path.GetFileName(src)} -> {Path.GetFileName(dst)}");
+
                     Step();
                 }
 
@@ -289,6 +310,13 @@ namespace leituraWPF.Services
                 // 11) Imagens (PRINT001, PRINT002…)
                 for (int i = 0; i < images.Count; i++)
                     MoveRen(images[i], $"_PRINT{i + 1:D3}");
+
+                // 12) Escreve log
+                var logName = $"log_{now:yyyyMMdd_HHmmss}.txt";
+                var logPath = Path.Combine(clienteDir, logName);
+                File.WriteAllLines(logPath, logLines, Encoding.UTF8);
+                try { FileReadyForBackup?.Invoke(logPath); } catch { /* ignore */ }
+                Step();
 
                 Report(100);
             });
