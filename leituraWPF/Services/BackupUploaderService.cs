@@ -258,6 +258,7 @@ namespace leituraWPF.Services
             }
         }
 
+
         private async Task UploadSmallAsync(string driveId, string folder, string name, string path, CancellationToken ct)
         {
             var url = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(folder)}/{Uri.EscapeDataString(name)}:/content?@microsoft.graph.conflictBehavior=replace";
@@ -266,6 +267,7 @@ namespace leituraWPF.Services
             using var resp = await _http.PutAsync(url, content, ct);
             await EnsureSuccessAsync(resp, $"PUT {name}");
         }
+
 
         private async Task UploadLargeAsync(string driveId, string folder, string name, string path, long size, CancellationToken ct)
         {
