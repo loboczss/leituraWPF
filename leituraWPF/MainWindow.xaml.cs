@@ -105,6 +105,7 @@ namespace leituraWPF
                 });
             };
 
+            _backup.LoadPendingFromBaseDirs();
             _backup.Start();
 
             // inicia sincronização automática a cada 10 minutos (cancelável)
