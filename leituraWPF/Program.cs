@@ -9,6 +9,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Windows;
 
+// Aliases para tirar ambiguidade de Application/Window
+using WpfApp = System.Windows.Application;
+using WpfWindow = System.Windows.Window;
 
 namespace leituraWPF
 {
@@ -71,14 +74,33 @@ namespace leituraWPF
             var funcionarios = funcService.LoadFuncionariosAsync(csvPath).GetAwaiter().GetResult();
             var login = new LoginWindow(funcionarios);
 
+            // Cria a Application ANTES do ShowDialog (dispatcher ativo para o poller abrir janelas)
             var app = new App();
             app.InitializeComponent();
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
+            // ⬇️ Poller ATIVO já durante a tela de login:
+            using var updatePoller = new UpdatePoller(
+                service: new AtualizadorService(),
+                ownerResolver: () =>
+                {
+                    // Preferir MainWindow quando visível; senão, usar a janela de login (se estiver visível)
+                    if (WpfApp.Current?.MainWindow != null && WpfApp.Current.MainWindow.IsVisible)
+                        return WpfApp.Current.MainWindow;
+
+                    return login != null && login.IsVisible ? (WpfWindow)login : null;
+                },
+                baseInterval: TimeSpan.FromMinutes(10),
+                maxInterval: TimeSpan.FromHours(1),
+                initialDelay: TimeSpan.FromSeconds(5) // dá tempo da tela de login aparecer
+            );
+
             if (login.ShowDialog() == true)
             {
                 app.ShutdownMode = ShutdownMode.OnMainWindowClose;
+
                 var main = new MainWindow(login.FuncionarioLogado);
+
                 using var tray = new TrayService(
                     showWindow: () => app.Dispatcher.Invoke(() =>
                     {
@@ -87,8 +109,11 @@ namespace leituraWPF
                         main.Activate();
                     }),
                     sync: () => main.RunManualSync());
+
                 app.Run(main);
+                // Ao sair do Run, 'using' garante Dispose do tray e do poller
             }
+            // Se o login for cancelado, o poller é descartado automaticamente aqui pelo 'using'
         }
     }
 }
