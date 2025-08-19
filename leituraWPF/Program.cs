@@ -1,6 +1,9 @@
-﻿using System;
+using leituraWPF.Services;
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Windows;
 
 namespace leituraWPF
 {
@@ -22,9 +25,38 @@ namespace leituraWPF
                 PropertyNameCaseInsensitive = true
             }) ?? new AppConfig();
 
+            var baseDir = AppContext.BaseDirectory;
+            var tokenService = new TokenService(Config);
+            var funcService = new FuncionarioService(Config, tokenService);
+
+            try
+            {
+                // Tenta baixar o CSV antes de prosseguir
+                funcService.DownloadCsvAsync(baseDir).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // ignorado: falha de rede
+            }
+
+            var csvPath = Path.Combine(baseDir, "funcionarios.csv");
+            if (!File.Exists(csvPath))
+            {
+                MessageBox.Show("Arquivo de funcionários não disponível e não foi possível baixá-lo.",
+                                "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            var funcionarios = funcService.LoadFuncionariosAsync(csvPath).GetAwaiter().GetResult();
+            var login = new LoginWindow(funcionarios);
+
             var app = new App();
             app.InitializeComponent();
-            app.Run(new MainWindow());
+
+            if (login.ShowDialog() == true)
+            {
+                app.Run(new MainWindow());
+            }
         }
     }
 
@@ -54,5 +86,4 @@ namespace leituraWPF
         public string BackupFolder { get; set; } = "LogsRenomeacao";
         public int BackupPollSeconds { get; set; } = 30;
     }
-
 }
