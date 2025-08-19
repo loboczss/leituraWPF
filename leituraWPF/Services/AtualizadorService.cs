@@ -243,7 +243,7 @@ namespace leituraWPF.Services
             sb.AppendLine();
             sb.AppendLine("echo [INFO] Criando atalho na area de trabalho...");
             sb.AppendLine("set DESKTOP=%USERPROFILE%\\Desktop");
-            sb.AppendLine($"powershell -NoLogo -NoProfile -Command \"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%DESKTOP%\\{AppProductName}.lnk');$s.TargetPath='%INSTALL%\\{AppExeName}';$s.WorkingDirectory='%INSTALL%';$s.IconLocation='%INSTALL%\\{AppExeName},0';$s.Save()\" >nul 2>nul");
+            sb.AppendLine($"powershell -NoLogo -NoProfile -Command \"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%DESKTOP%\\CompillerLog.lnk');$s.TargetPath='%INSTALL%\\{AppExeName}';$s.WorkingDirectory='%INSTALL%';$s.IconLocation='%INSTALL%\\{AppExeName},0';$s.Save()\" >nul 2>nul");
             sb.AppendLine();
             sb.AppendLine("echo [INFO] Limpando temporarios...");
             sb.AppendLine("rmdir /s /q \"%TEMP_DIR%\" >nul 2>nul");
