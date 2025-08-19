@@ -450,12 +450,10 @@
 
                 <!-- Header do Painel -->
                 <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,0,0,32">
-                    <Border Background="White" CornerRadius="50" Width="64" Height="64" 
-                            HorizontalAlignment="Center" Margin="0,0,0,16">
-                        <Path Data="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M17,13H13V17H11V13H7V11H11V7H13V11H17V13Z" 
-                              Fill="#007ACC" Width="32" Height="32" Stretch="Uniform" 
-                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
+
+                    <Image Source="logo.png" Width="205" Height="179" Stretch="Uniform"
+                               HorizontalAlignment="Center"/>
+
                     <TextBlock Text="Organizador" FontWeight="Bold" FontSize="18" 
                                Foreground="White" TextAlignment="Center"/>
                     <TextBlock Text="de Arquivos" FontWeight="Bold" FontSize="18" 
