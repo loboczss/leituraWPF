@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Reflection;
 using WpfMessageBox = System.Windows.MessageBox;
 
 namespace leituraWPF
@@ -39,6 +40,8 @@ namespace leituraWPF
         public MainWindow(Funcionario? funcionario = null)
         {
             InitializeComponent();
+
+            LblVersao.Text = $"v{Assembly.GetExecutingAssembly().GetName().Version}";
 
             _funcionario = funcionario;
             if (_funcionario != null)
