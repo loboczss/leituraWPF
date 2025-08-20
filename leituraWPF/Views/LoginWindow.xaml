@@ -299,10 +299,16 @@
                         <Border x:Name="StatusBorder"
                                 Style="{StaticResource InfoCard}"
                                 Visibility="Collapsed">
-                            <TextBlock x:Name="TxtSummary"
-                                       FontSize="12"
-                                       Foreground="{StaticResource Ink}"
-                                       TextWrapping="Wrap"/>
+                            <StackPanel>
+                                <TextBlock x:Name="TxtSummary"
+                                           FontSize="12"
+                                           Foreground="{StaticResource Ink}"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock x:Name="TxtBackupStatus"
+                                           FontSize="12"
+                                           Foreground="{StaticResource Ink}"
+                                           Margin="0,4,0,0"/>
+                            </StackPanel>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

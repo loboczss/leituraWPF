@@ -66,8 +66,12 @@ namespace leituraWPF
             }
 
             var tokenService = new TokenService(Config);
+            using var backup = new BackupUploaderService(Config, tokenService);
+            backup.LoadPendingFromBaseDirs();
+            backup.Start();
+
             var funcService = new FuncionarioService(Config, tokenService);
-            var login = new LoginWindow(funcService);
+            var login = new LoginWindow(funcService, backup);
 
             // Cria a Application ANTES do ShowDialog (dispatcher ativo para o poller abrir janelas)
             var app = new App();
@@ -94,7 +98,7 @@ namespace leituraWPF
             {
                 app.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
-                var main = new MainWindow(login.FuncionarioLogado);
+                var main = new MainWindow(login.FuncionarioLogado, backup);
 
                 void ShowMainWindow()
                 {

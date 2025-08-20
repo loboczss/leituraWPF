@@ -45,7 +45,7 @@ namespace leituraWPF
         private bool _suppressLogs = false;
         private bool _allowClose = false;
 
-        public MainWindow(Funcionario? funcionario = null)
+        public MainWindow(Funcionario? funcionario = null, BackupUploaderService? backupService = null)
         {
             InitializeComponent();
 
@@ -72,7 +72,7 @@ namespace leituraWPF
             _tokenService = new TokenService(Program.Config);
             _downloader = new GraphDownloader(Program.Config, _tokenService, this, this);
             _jsonReader = new JsonReaderService(this);
-            _backup = new BackupUploaderService(Program.Config, _tokenService);
+            _backup = backupService ?? new BackupUploaderService(Program.Config, _tokenService);
 
             _renamer.FileReadyForBackup += async p => await _backup.EnqueueAsync(p);
             _installRenamer.FileReadyForBackup += async p => await _backup.EnqueueAsync(p);
@@ -105,8 +105,11 @@ namespace leituraWPF
                 });
             };
 
-            _ = _backup.LoadPendingFromBaseDirsAsync();
-            _backup.Start();
+            if (backupService == null)
+            {
+                _ = _backup.LoadPendingFromBaseDirsAsync();
+                _backup.Start();
+            }
 
             // inicia sincronização automática a cada 10 minutos (cancelável)
             _ = Task.Run(async () =>
