@@ -122,7 +122,7 @@ namespace leituraWPF
                     sync: () => main.RunManualSync(),
                     exit: () => app.Dispatcher.Invoke(() => main.ForceClose()));
 
-                main.Show();
+
                 app.Run(main);
             }
             // Se o login for cancelado, o poller é descartado automaticamente aqui pelo 'using'
