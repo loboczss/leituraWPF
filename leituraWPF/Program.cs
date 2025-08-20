@@ -66,10 +66,16 @@ namespace leituraWPF
             }
 
             var tokenService = new TokenService(Config);
+            using var backup = new BackupUploaderService(Config, tokenService);
+            backup.LoadPendingFromBaseDirs();
+            backup.Start();
+
             var funcService = new FuncionarioService(Config, tokenService);
+
             using var backup = new BackupUploaderService(Config, tokenService);
             _ = backup.LoadPendingFromBaseDirsAsync();
             backup.Start();
+
 
             var login = new LoginWindow(funcService, backup);
 

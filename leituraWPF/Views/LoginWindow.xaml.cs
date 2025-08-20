@@ -18,6 +18,7 @@ namespace leituraWPF
     public partial class LoginWindow : Window, INotifyPropertyChanged
     {
         private readonly FuncionarioService _funcService;
+        private readonly BackupUploaderService _backup;
         private IDictionary<string, Funcionario> _funcionarios = new Dictionary<string, Funcionario>();
         private bool _isLoading;
         private string _statusMessage = string.Empty;
@@ -60,12 +61,35 @@ namespace leituraWPF
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public LoginWindow(FuncionarioService funcService)
+        public LoginWindow(FuncionarioService funcService, BackupUploaderService backup)
         {
             InitializeComponent();
             _funcService = funcService ?? throw new ArgumentNullException(nameof(funcService));
+            _backup = backup ?? throw new ArgumentNullException(nameof(backup));
             DataContext = this;
-            _cancellationTokenSource = new CancellationTokenSource();
+
+
+            _backup.CountersChanged += (pend, sent) =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    long total = pend + sent;
+                    long percent = total > 0 ? (sent * 100 / total) : 0;
+                    if (StatusBorder != null)
+                        StatusBorder.Visibility = Visibility.Visible;
+                    if (TxtBackupStatus != null)
+                        TxtBackupStatus.Text = $"Backup: {sent}/{total} ({percent}%)";
+                });
+            };
+
+            Dispatcher.Invoke(() =>
+            {
+                long total = _backup.PendingCount + _backup.UploadedCountSession;
+                long percent = total > 0 ? (_backup.UploadedCountSession * 100 / total) : 0;
+                StatusBorder.Visibility = Visibility.Visible;
+                TxtBackupStatus.Text = $"Backup: {_backup.UploadedCountSession}/{total} ({percent}%)";
+            });
+
         }
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
