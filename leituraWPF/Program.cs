@@ -46,14 +46,10 @@ namespace leituraWPF
         {
             try
             {
-                // Timeout curto para não travar
+                // Sinaliza a instância existente para mostrar a janela principal
                 using var evt = EventWaitHandle.OpenExisting("leituraWPF_SHOW_EVENT");
-                var signaled = evt.WaitOne(TimeSpan.FromSeconds(1));
-                if (signaled)
-                {
-                    evt.Set();
-                    return;
-                }
+                evt.Set();
+                return;
             }
             catch (WaitHandleCannotBeOpenedException)
             {
