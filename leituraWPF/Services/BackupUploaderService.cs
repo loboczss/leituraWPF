@@ -214,8 +214,8 @@ namespace leituraWPF.Services
         {
             ThrowIfDisposed();
 
-            await EnqueueFileAsync(filePath);
-            await UpdateCountersAsync();
+            await EnqueueFileAsync(filePath).ConfigureAwait(false);
+            await UpdateCountersAsync().ConfigureAwait(false);
         }
 
         public async Task LoadPendingFromBaseDirsAsync()
@@ -232,7 +232,7 @@ namespace leituraWPF.Services
                     {
                         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                         {
-                            await EnqueueFileAsync(file);
+                            await EnqueueFileAsync(file).ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex)
@@ -242,14 +242,14 @@ namespace leituraWPF.Services
                 }));
             }
 
-            await Task.WhenAll(tasks);
-            await UpdateCountersAsync();
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+            await UpdateCountersAsync().ConfigureAwait(false);
         }
 
         // Método síncrono para compatibilidade com código existente
         public void LoadPendingFromBaseDirs()
         {
-            LoadPendingFromBaseDirsAsync().GetAwaiter().GetResult();
+            LoadPendingFromBaseDirsAsync().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         private async Task UpdateCountersAsync()
