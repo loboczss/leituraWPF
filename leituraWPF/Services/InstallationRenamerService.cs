@@ -95,7 +95,7 @@ namespace leituraWPF.Services
 
                 string baseDir = ResolveBaseDir(uf);
                 string rotaDir = CreateDir(Path.Combine(baseDir, Sanitize(string.IsNullOrWhiteSpace(rota) ? "SEM_ROTA" : rota)));
-                string destino = CreateDir(Path.Combine(rotaDir, Sanitize($"{idSigfi}_INSTALACAO")));
+                string destino = CreateDir(Path.Combine(rotaDir, Sanitize($"{idSigfi}_instalacao")));
                 LastDestination = destino;
 
                 if (Directory.EnumerateFileSystemEntries(destino).Any())
