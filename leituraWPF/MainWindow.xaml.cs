@@ -180,11 +180,7 @@ namespace leituraWPF
 
         private void TxtSyncStatus_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            var pending = _backup.GetPendingFiles().Select(Path.GetFileName);
-            var sent = _backup.GetSentFiles().Select(Path.GetFileName);
-            var errors = _backup.GetErrorFiles().Select(Path.GetFileName);
-
-            var win = new BackupStatusWindow(pending, sent, errors) { Owner = this };
+            var win = new BackupStatusWindow(_backup) { Owner = this };
             win.ShowDialog();
         }
 
