@@ -71,6 +71,12 @@ namespace leituraWPF
             backup.Start();
 
             var funcService = new FuncionarioService(Config, tokenService);
+
+            using var backup = new BackupUploaderService(Config, tokenService);
+            _ = backup.LoadPendingFromBaseDirsAsync();
+            backup.Start();
+
+
             var login = new LoginWindow(funcService, backup);
 
             // Cria a Application ANTES do ShowDialog (dispatcher ativo para o poller abrir janelas)

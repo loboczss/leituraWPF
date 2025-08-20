@@ -304,10 +304,12 @@
                                            FontSize="12"
                                            Foreground="{StaticResource Ink}"
                                            TextWrapping="Wrap"/>
-                                <TextBlock x:Name="TxtBackupStatus"
+
+                                <TextBlock x:Name="TxtBackupProgress"
                                            FontSize="12"
                                            Foreground="{StaticResource Ink}"
-                                           Margin="0,4,0,0"/>
+                                           TextWrapping="Wrap"/>
+
                             </StackPanel>
                         </Border>
                     </StackPanel>

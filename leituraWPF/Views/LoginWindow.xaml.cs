@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Animation;
@@ -21,6 +22,8 @@ namespace leituraWPF
         private IDictionary<string, Funcionario> _funcionarios = new Dictionary<string, Funcionario>();
         private bool _isLoading;
         private string _statusMessage = string.Empty;
+        private CancellationTokenSource? _cancellationTokenSource;
+        private bool _disposed;
 
         public Funcionario? FuncionarioLogado { get; private set; }
 
@@ -46,7 +49,12 @@ namespace leituraWPF
                 {
                     _statusMessage = value;
                     OnPropertyChanged(nameof(StatusMessage));
-                    TxtSummary.Text = value;
+
+                    // Thread-safe UI update
+                    if (Dispatcher.CheckAccess())
+                        TxtSummary.Text = value;
+                    else
+                        Dispatcher.BeginInvoke(() => TxtSummary.Text = value);
                 }
             }
         }
@@ -59,6 +67,7 @@ namespace leituraWPF
             _funcService = funcService ?? throw new ArgumentNullException(nameof(funcService));
             _backup = backup ?? throw new ArgumentNullException(nameof(backup));
             DataContext = this;
+
 
             _backup.CountersChanged += (pend, sent) =>
             {
@@ -80,55 +89,104 @@ namespace leituraWPF
                 StatusBorder.Visibility = Visibility.Visible;
                 TxtBackupStatus.Text = $"Backup: {_backup.UploadedCountSession}/{total} ({percent}%)";
             });
+
         }
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            BtnLogin.IsEnabled = false;
-            StatusMessage = "Carregando funcionários...";
-            var statusBorder = FindName("StatusBorder") as FrameworkElement;
-            if (statusBorder != null)
-                statusBorder.Visibility = Visibility.Visible;
+            if (_disposed) return;
 
-            await AnimateWindowEntrance();
-            await LoadFuncionariosAsync();
-            await LoadStatsAsync();
-            TxtMatricula.Focus();
+            try
+            {
+                BtnLogin.IsEnabled = false;
+                StatusMessage = "Carregando...";
+
+                var statusBorder = FindName("StatusBorder") as FrameworkElement;
+                if (statusBorder != null)
+                    statusBorder.Visibility = Visibility.Visible;
+
+                await AnimateWindowEntrance();
+
+                // Executar operações em paralelo quando possível
+                var loadFuncTask = LoadFuncionariosAsync();
+                var loadStatsTask = LoadStatsAsync();
+
+                await Task.WhenAll(loadFuncTask, loadStatsTask);
+
+                TxtMatricula.Focus();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Erro na inicialização";
+                System.Diagnostics.Debug.WriteLine($"Erro Window_Loaded: {ex.Message}");
+            }
         }
 
         private async Task LoadFuncionariosAsync()
         {
+            var ct = _cancellationTokenSource?.Token ?? CancellationToken.None;
+
             try
             {
                 IsLoading = true;
                 BtnLogin.IsEnabled = false;
 
                 var baseDir = AppContext.BaseDirectory;
-                try
+                var csvPath = Path.Combine(baseDir, "funcionarios.csv");
+
+                // Tentar download apenas se não existir ou for muito antigo (> 1 dia)
+                bool needsDownload = !File.Exists(csvPath);
+                if (!needsDownload)
                 {
-                    await _funcService.DownloadCsvAsync(baseDir);
-                }
-                catch
-                {
-                    // ignorado: falha de rede
+                    var lastWrite = File.GetLastWriteTime(csvPath);
+                    needsDownload = DateTime.Now.Subtract(lastWrite).TotalDays > 1;
                 }
 
-                var csvPath = Path.Combine(baseDir, "funcionarios.csv");
+                if (needsDownload)
+                {
+                    try
+                    {
+                        // Timeout curto para não travar a interface
+                        using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                        downloadCts.CancelAfter(TimeSpan.FromSeconds(10));
+
+                        await _funcService.DownloadCsvAsync(baseDir, downloadCts.Token);
+                    }
+                    catch
+                    {
+                        // Download falhou - continuar com arquivo local se existir
+                    }
+                }
+
                 if (!File.Exists(csvPath))
                 {
-                    System.Windows.MessageBox.Show("Arquivo de funcionários não disponível e não foi possível baixá-lo.",
-                                    "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
-                    Close();
+                    if (!ct.IsCancellationRequested)
+                    {
+                        System.Windows.MessageBox.Show("Arquivo de funcionários não encontrado.", "Erro",
+                                       MessageBoxButton.OK, MessageBoxImage.Warning);
+                        Close();
+                    }
                     return;
                 }
 
-                _funcionarios = await _funcService.LoadFuncionariosAsync(csvPath);
+                _funcionarios = await _funcService.LoadFuncionariosAsync(csvPath, ct);
+
+                if (_funcionarios.Count == 0 && !ct.IsCancellationRequested)
+                {
+                    StatusMessage = "Nenhum funcionário carregado";
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal quando cancelado
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"Erro ao carregar funcionários: {ex.Message}",
-                                "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
-                Close();
+                if (!ct.IsCancellationRequested)
+                {
+                    StatusMessage = "Erro ao carregar funcionários";
+                    System.Diagnostics.Debug.WriteLine($"Erro LoadFuncionarios: {ex.Message}");
+                }
             }
             finally
             {
@@ -139,171 +197,234 @@ namespace leituraWPF
 
         private async Task LoadStatsAsync()
         {
+            var ct = _cancellationTokenSource?.Token ?? CancellationToken.None;
+
             try
             {
-                IsLoading = true;
+                // Operação rápida - não precisa de IsLoading
+                var stats = await Task.Run(() => SyncStatsService.Load(), ct);
 
-                // Simula operação assíncrona se necessário
-                await Task.Run(() =>
+                if (!ct.IsCancellationRequested)
                 {
-                    var stats = SyncStatsService.Load();
-                    Dispatcher.Invoke(() =>
-                    {
-                        StatusMessage = $"Enviados: {stats.Uploaded} | Baixados: {stats.Downloaded}";
-                        // Mostra o status border
-                        var statusBorder = FindName("StatusBorder") as FrameworkElement;
-                        if (statusBorder != null)
-                            statusBorder.Visibility = Visibility.Visible;
-                    });
-                });
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = "Erro ao carregar estatísticas";
-                // Log do erro se necessário
-                System.Diagnostics.Debug.WriteLine($"Erro ao carregar stats: {ex.Message}");
+                    StatusMessage = $"Enviados: {stats.Uploaded} | Baixados: {stats.Downloaded}";
 
-                // Mostra o status border mesmo com erro
-                var statusBorder = FindName("StatusBorder") as FrameworkElement;
-                if (statusBorder != null)
-                    statusBorder.Visibility = Visibility.Visible;
+                    var statusBorder = FindName("StatusBorder") as FrameworkElement;
+                    if (statusBorder != null)
+                        statusBorder.Visibility = Visibility.Visible;
+                }
             }
-            finally
+            catch (OperationCanceledException)
             {
-                IsLoading = false;
+                // Normal quando cancelado
+            }
+            catch
+            {
+                // Falha silenciosa - stats não são críticas
+                if (!ct.IsCancellationRequested)
+                {
+                    StatusMessage = "Pronto";
+
+                    var statusBorder = FindName("StatusBorder") as FrameworkElement;
+                    if (statusBorder != null)
+                        statusBorder.Visibility = Visibility.Visible;
+                }
             }
         }
 
         private async void BtnLogin_Click(object sender, RoutedEventArgs e)
         {
-            await ProcessLoginAsync(sender);
+            await ProcessLoginAsync();
         }
 
-        private async Task ProcessLoginAsync(object sender = null)
+        private async Task ProcessLoginAsync()
         {
-            if (IsLoading) return;
+            if (IsLoading || _disposed) return;
+
+            var ct = _cancellationTokenSource?.Token ?? CancellationToken.None;
+            if (ct.IsCancellationRequested) return;
 
             try
             {
                 IsLoading = true;
-                StatusMessage = "Verificando matrícula...";
+                BtnLogin.IsEnabled = false;
+                StatusMessage = "Verificando...";
 
-                // Desabilita o botão temporariamente
-                var button = sender as System.Windows.Controls.Button;
-                if (button != null) button.IsEnabled = false;
-
-                // Remove zeros à esquerda da matrícula digitada
                 var matricula = (TxtMatricula.Text ?? string.Empty).Trim().TrimStart('0');
 
                 if (string.IsNullOrWhiteSpace(matricula))
                 {
-                    await ShowErrorMessageAsync("Por favor, digite sua matrícula.");
+                    await ShowErrorMessageAsync("Digite sua matrícula");
                     return;
                 }
 
-                // Simula verificação assíncrona (pode ser útil para verificação em BD)
-                await Task.Delay(500); // Pequeno delay para mostrar o loading
+                // Pequeno delay para UX, mas cancelável
+                try
+                {
+                    await Task.Delay(300, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
 
                 if (_funcionarios.TryGetValue(matricula, out var func))
                 {
                     FuncionarioLogado = func;
                     StatusMessage = $"Bem-vindo, {func.Nome}!";
 
-                    // Pequeno delay para mostrar a mensagem de sucesso
-                    await Task.Delay(800);
+                    try
+                    {
+                        await Task.Delay(500, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
 
-                    DialogResult = true;
-                    Close();
+                    if (!ct.IsCancellationRequested)
+                    {
+                        DialogResult = true;
+                        Close();
+                    }
                 }
                 else
                 {
-                    await ShowErrorMessageAsync("Matrícula não encontrada.");
-                    TxtMatricula.SelectAll();
-                    TxtMatricula.Focus();
+                    await ShowErrorMessageAsync("Matrícula não encontrada");
+                    if (!ct.IsCancellationRequested)
+                    {
+                        TxtMatricula.SelectAll();
+                        TxtMatricula.Focus();
+                    }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal quando cancelado
             }
             catch (Exception ex)
             {
-                await ShowErrorMessageAsync($"Erro durante o login: {ex.Message}");
+                if (!ct.IsCancellationRequested)
+                {
+                    await ShowErrorMessageAsync("Erro no login");
+                    System.Diagnostics.Debug.WriteLine($"Erro ProcessLogin: {ex.Message}");
+                }
             }
             finally
             {
                 IsLoading = false;
-                // Reabilita o botão
-                var button = sender as System.Windows.Controls.Button;
-                if (button != null) button.IsEnabled = true;
+                BtnLogin.IsEnabled = true;
             }
         }
 
         private async Task ShowErrorMessageAsync(string message)
         {
+            var ct = _cancellationTokenSource?.Token ?? CancellationToken.None;
+            if (ct.IsCancellationRequested) return;
+
             StatusMessage = message;
 
-            // Animação de shake no campo de matrícula
-            await AnimateShake(TxtMatricula);
-
-            // Limpa a mensagem após alguns segundos
-            await Task.Delay(3000);
-            if (StatusMessage == message) // Só limpa se não mudou
+            try
             {
-                var stats = SyncStatsService.Load();
-                StatusMessage = $"Enviados: {stats.Uploaded} | Baixados: {stats.Downloaded}";
+                // Animação de shake mais rápida
+                await AnimateShake(TxtMatricula);
+
+                // Timeout mais curto para limpar mensagem
+                await Task.Delay(2000, ct);
+
+                if (StatusMessage == message && !ct.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var stats = SyncStatsService.Load();
+                        StatusMessage = $"Enviados: {stats.Uploaded} | Baixados: {stats.Downloaded}";
+                    }
+                    catch
+                    {
+                        StatusMessage = "Pronto";
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal quando cancelado
             }
         }
 
         private async Task AnimateWindowEntrance()
         {
-            // Para Window, apenas animamos a opacidade e posição
-            Opacity = 0;
+            var ct = _cancellationTokenSource?.Token ?? CancellationToken.None;
+            if (ct.IsCancellationRequested) return;
 
-            // Move a janela ligeiramente para baixo
-            var originalTop = Top;
-            Top += 20;
-
-            var opacityAnimation = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(400))
+            try
             {
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-            };
+                Opacity = 0;
+                var originalTop = Top;
+                Top += 20;
 
-            var positionAnimation = new DoubleAnimation(originalTop, TimeSpan.FromMilliseconds(400))
+                var opacityAnimation = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(300))
+                {
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+                };
+
+                var positionAnimation = new DoubleAnimation(originalTop, TimeSpan.FromMilliseconds(300))
+                {
+                    EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.2 }
+                };
+
+                BeginAnimation(OpacityProperty, opacityAnimation);
+                BeginAnimation(TopProperty, positionAnimation);
+
+                await Task.Delay(300, ct);
+            }
+            catch (OperationCanceledException)
             {
-                EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 }
-            };
-
-            BeginAnimation(OpacityProperty, opacityAnimation);
-            BeginAnimation(TopProperty, positionAnimation);
-
-            await Task.Delay(400);
+                // Completar animação imediatamente se cancelado
+                Opacity = 1;
+            }
         }
 
         private async Task AnimateShake(FrameworkElement element)
         {
-            var originalMargin = element.Margin;
+            var ct = _cancellationTokenSource?.Token ?? CancellationToken.None;
+            if (ct.IsCancellationRequested) return;
 
-            // Animação de shake usando mudanças na margem
-            var shakeStoryboard = new Storyboard();
-            var shakeAnimation = new ThicknessAnimationUsingKeyFrames();
+            try
+            {
+                var originalMargin = element.Margin;
+                var shakeStoryboard = new Storyboard();
+                var shakeAnimation = new ThicknessAnimationUsingKeyFrames();
 
-            shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(originalMargin, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(0))));
-            shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(new Thickness(originalMargin.Left - 5, originalMargin.Top, originalMargin.Right + 5, originalMargin.Bottom), KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(50))));
-            shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(new Thickness(originalMargin.Left + 5, originalMargin.Top, originalMargin.Right - 5, originalMargin.Bottom), KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(100))));
-            shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(new Thickness(originalMargin.Left - 3, originalMargin.Top, originalMargin.Right + 3, originalMargin.Bottom), KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(150))));
-            shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(new Thickness(originalMargin.Left + 3, originalMargin.Top, originalMargin.Right - 3, originalMargin.Bottom), KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(200))));
-            shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(originalMargin, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(250))));
+                // Animação mais simples e rápida
+                shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(originalMargin, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(
+                    new Thickness(originalMargin.Left - 4, originalMargin.Top, originalMargin.Right + 4, originalMargin.Bottom),
+                    KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(40))));
+                shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(
+                    new Thickness(originalMargin.Left + 4, originalMargin.Top, originalMargin.Right - 4, originalMargin.Bottom),
+                    KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(80))));
+                shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(
+                    new Thickness(originalMargin.Left - 2, originalMargin.Top, originalMargin.Right + 2, originalMargin.Bottom),
+                    KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(120))));
+                shakeAnimation.KeyFrames.Add(new LinearThicknessKeyFrame(originalMargin,
+                    KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(160))));
 
-            Storyboard.SetTarget(shakeAnimation, element);
-            Storyboard.SetTargetProperty(shakeAnimation, new PropertyPath(FrameworkElement.MarginProperty));
+                Storyboard.SetTarget(shakeAnimation, element);
+                Storyboard.SetTargetProperty(shakeAnimation, new PropertyPath(FrameworkElement.MarginProperty));
 
-            shakeStoryboard.Children.Add(shakeAnimation);
-            shakeStoryboard.Begin();
+                shakeStoryboard.Children.Add(shakeAnimation);
+                shakeStoryboard.Begin();
 
-            await Task.Delay(250);
+                await Task.Delay(160, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal quando cancelado
+            }
         }
 
-        // Método para permitir arrastar a janela
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.ButtonState == MouseButtonState.Pressed)
+            if (e.ButtonState == MouseButtonState.Pressed && !_disposed)
             {
                 try
                 {
@@ -311,64 +432,136 @@ namespace leituraWPF
                 }
                 catch (InvalidOperationException)
                 {
-                    // Ignora exceção se a janela não puder ser movida
+                    // Ignorar - janela não pode ser movida no momento
                 }
             }
         }
 
-        // Método para fechar a janela com animação
         private async void CloseButton_Click(object sender, MouseButtonEventArgs e)
         {
-            await AnimateWindowExit();
-            Close();
+            await CloseWindowAsync();
+        }
+
+        private async Task CloseWindowAsync()
+        {
+            if (_disposed) return;
+
+            try
+            {
+                await AnimateWindowExit();
+            }
+            catch
+            {
+                // Ignorar erros de animação
+            }
+            finally
+            {
+                Close();
+            }
         }
 
         private async Task AnimateWindowExit()
         {
-            var opacityAnimation = new DoubleAnimation(0, TimeSpan.FromMilliseconds(250))
+            var ct = _cancellationTokenSource?.Token ?? CancellationToken.None;
+
+            try
             {
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
-            };
+                var opacityAnimation = new DoubleAnimation(0, TimeSpan.FromMilliseconds(200))
+                {
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
+                };
 
-            var positionAnimation = new DoubleAnimation(Top + 15, TimeSpan.FromMilliseconds(250))
+                var positionAnimation = new DoubleAnimation(Top + 10, TimeSpan.FromMilliseconds(200))
+                {
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
+                };
+
+                BeginAnimation(OpacityProperty, opacityAnimation);
+                BeginAnimation(TopProperty, positionAnimation);
+
+                await Task.Delay(200, ct);
+            }
+            catch (OperationCanceledException)
             {
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
-            };
-
-            BeginAnimation(OpacityProperty, opacityAnimation);
-            BeginAnimation(TopProperty, positionAnimation);
-
-            await Task.Delay(250);
+                // Completar animação imediatamente
+                Opacity = 0;
+            }
         }
 
-        // Sobrescrever método KeyDown para suportar Enter e Escape
         protected override void OnKeyDown(KeyEventArgs e)
         {
-            if (e.Key == Key.Enter && !IsLoading)
+            if (_disposed)
             {
-                _ = ProcessLoginAsync(); // Sem sender quando chamado pelo teclado
                 e.Handled = true;
-            }
-            else if (e.Key == Key.Escape)
-            {
-                _ = AnimateWindowExit();
-                Close();
-                e.Handled = true;
+                return;
             }
 
-            base.OnKeyDown(e);
+            try
+            {
+                if (e.Key == Key.Enter && !IsLoading)
+                {
+                    _ = ProcessLoginAsync(); // Manter contexto da UI
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Escape)
+                {
+                    _ = CloseWindowAsync(); // Manter contexto da UI
+                    e.Handled = true;
+                }
+
+                base.OnKeyDown(e);
+            }
+            catch
+            {
+                e.Handled = true;
+            }
         }
 
         protected virtual void OnPropertyChanged(string propertyName)
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            try
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            }
+            catch
+            {
+                // Ignorar erros de notificação
+            }
         }
 
-        // Cleanup
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            if (!_disposed)
+            {
+                _cancellationTokenSource?.Cancel();
+                _disposed = true;
+            }
+
+            base.OnClosing(e);
+        }
+
         protected override void OnClosed(EventArgs e)
         {
-            PropertyChanged = null;
-            base.OnClosed(e);
+            try
+            {
+                if (!_disposed)
+                {
+                    _cancellationTokenSource?.Cancel();
+                    _disposed = true;
+                }
+
+                PropertyChanged = null;
+                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = null;
+            }
+            catch
+            {
+                // Ignorar erros de cleanup
+            }
+            finally
+            {
+                base.OnClosed(e);
+            }
         }
     }
 }
