@@ -92,11 +92,9 @@ namespace leituraWPF
 
             if (login.ShowDialog() == true)
             {
+                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
                 var main = new MainWindow(login.FuncionarioLogado);
-
-                app.MainWindow = main;
-                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
                 void ShowMainWindow()
                 {
@@ -122,8 +120,11 @@ namespace leituraWPF
                     sync: () => main.RunManualSync(),
                     exit: () => app.Dispatcher.Invoke(() => main.ForceClose()));
 
-
-                app.Run(main);
+                // Exibe a janela principal antes de iniciar o loop da aplicação
+                app.MainWindow = main;
+                main.Show();
+                app.Run();
+                // Ao sair do Run, 'using' garante Dispose do tray e do poller
             }
             // Se o login for cancelado, o poller é descartado automaticamente aqui pelo 'using'
         }

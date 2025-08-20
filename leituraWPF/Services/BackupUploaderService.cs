@@ -1,6 +1,3 @@
-// Services/BackupUploaderService.cs
-using leituraWPF.Utils;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -8,12 +5,12 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using leituraWPF.Utils;
 
 namespace leituraWPF.Services
 {
@@ -27,7 +24,6 @@ namespace leituraWPF.Services
         private readonly AppConfig _cfg;
         private readonly TokenService _token;
         private readonly HttpClient _http;
-        private readonly ILogger<BackupUploaderService>? _logger;
 
         private readonly string _baseDir;
         private readonly string _pendingDir;
@@ -56,11 +52,10 @@ namespace leituraWPF.Services
         public event Action<int, long>? CountersChanged; // pending, uploaded (mantendo compatibilidade)
         public event Action<int, long, long>? CountersChangedDetailed; // pending, uploaded, errors
 
-        public BackupUploaderService(AppConfig cfg, TokenService token, ILogger<BackupUploaderService>? logger = null)
+        public BackupUploaderService(AppConfig cfg, TokenService token)
         {
             _cfg = cfg ?? throw new ArgumentNullException(nameof(cfg));
             _token = token ?? throw new ArgumentNullException(nameof(token));
-            _logger = logger;
 
             _baseDir = AppContext.BaseDirectory;
             _pendingDir = Path.Combine(_baseDir, "backup-pendentes");
@@ -89,8 +84,8 @@ namespace leituraWPF.Services
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Erro ao criar diretórios de backup");
-                throw;
+                // Não fazer throw aqui para não quebrar a inicialização
+                StatusChanged?.Invoke($"[BACKUP] Aviso: Erro ao criar diretórios - {ex.Message}");
             }
         }
 
@@ -108,7 +103,7 @@ namespace leituraWPF.Services
             {
                 try
                 {
-                    _logger?.LogInformation("Serviço de backup iniciado com intervalo de {Interval}s", interval.TotalSeconds);
+                    StatusChanged?.Invoke($"[BACKUP] Serviço iniciado com intervalo de {interval.TotalSeconds}s");
 
                     // Primeira execução imediata
                     await RunCycleAsync(_cancellationTokenSource.Token);
@@ -125,20 +120,24 @@ namespace leituraWPF.Services
                         }
                         catch (Exception ex)
                         {
-                            _logger?.LogError(ex, "Falha no ciclo de backup");
                             StatusChanged?.Invoke($"[BACKUP] falha no ciclo: {ex.Message}");
                         }
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    _logger?.LogInformation("Serviço de backup foi cancelado");
+                    StatusChanged?.Invoke("[BACKUP] Serviço cancelado");
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Erro crítico no serviço de backup");
+                    StatusChanged?.Invoke($"[BACKUP] Erro crítico: {ex.Message}");
                 }
             }, _cancellationTokenSource.Token);
+        }
+
+        public void Stop()
+        {
+            StopAsync().GetAwaiter().GetResult();
         }
 
         public async Task StopAsync(TimeSpan timeout = default)
@@ -163,13 +162,20 @@ namespace leituraWPF.Services
                     }
                 });
 
-                await waitTask.WaitAsync(timeoutToUse);
+                try
+                {
+                    await waitTask.WaitAsync(timeoutToUse);
+                }
+                catch
+                {
+                    // Ignore erros de timeout
+                }
 
                 _cancellationTokenSource.Dispose();
                 _cancellationTokenSource = null;
             }
 
-            _logger?.LogInformation("Serviço de backup parado");
+            StatusChanged?.Invoke("[BACKUP] Serviço parado");
         }
 
         private async Task<bool> EnqueueFileAsync(string filePath)
@@ -199,7 +205,7 @@ namespace leituraWPF.Services
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Erro ao enfileirar arquivo {FilePath}", filePath);
+                StatusChanged?.Invoke($"[BACKUP] Erro ao enfileirar {filePath}: {ex.Message}");
                 return false;
             }
         }
@@ -231,7 +237,7 @@ namespace leituraWPF.Services
                     }
                     catch (Exception ex)
                     {
-                        _logger?.LogWarning(ex, "Erro ao carregar arquivos do diretório {Directory}", dir);
+                        StatusChanged?.Invoke($"[BACKUP] Erro ao carregar diretório {dir}: {ex.Message}");
                     }
                 }));
             }
@@ -257,7 +263,7 @@ namespace leituraWPF.Services
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Erro ao atualizar contadores");
+                StatusChanged?.Invoke($"[BACKUP] Erro ao atualizar contadores: {ex.Message}");
             }
         }
 
@@ -267,8 +273,7 @@ namespace leituraWPF.Services
         {
             if (!await _mutex.WaitAsync(100, ct)) // Timeout curto para evitar bloqueio
             {
-                _logger?.LogDebug("Ciclo de backup já em execução, pulando");
-                return;
+                return; // Já em execução
             }
 
             IsRunning = true;
@@ -277,7 +282,6 @@ namespace leituraWPF.Services
             {
                 await UpdateCountersAsync();
 
-                _logger?.LogDebug("Iniciando ciclo de backup ({PendingCount} pendentes)", PendingCount);
                 StatusChanged?.Invoke($"[BACKUP] ciclo iniciado ({PendingCount} pendentes)");
 
                 if (PendingCount == 0)
@@ -293,7 +297,6 @@ namespace leituraWPF.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning(ex, "Erro ao obter token de acesso");
                     StatusChanged?.Invoke("[BACKUP] offline/sem token");
                     return;
                 }
@@ -303,7 +306,6 @@ namespace leituraWPF.Services
                 var driveId = await ResolveDriveIdAsync(ct);
                 if (string.IsNullOrEmpty(driveId))
                 {
-                    _logger?.LogWarning("Não foi possível resolver o DriveId");
                     StatusChanged?.Invoke("[BACKUP] driveId não resolvido");
                     return;
                 }
@@ -314,7 +316,6 @@ namespace leituraWPF.Services
                 }
                 catch (HttpRequestException ex)
                 {
-                    _logger?.LogWarning(ex, "Rede indisponível durante verificação de pasta");
                     StatusChanged?.Invoke($"[BACKUP] rede indisponível: {ex.Message}");
                     return;
                 }
@@ -325,18 +326,14 @@ namespace leituraWPF.Services
                 LastSuccessUtc = DateTime.UtcNow;
                 await UpdateCountersAsync();
 
-                _logger?.LogInformation("Ciclo de backup concluído: pendentes={PendingCount}, enviados(sessão)={UploadedCountSession}, erros={ErrorCount}",
-                    PendingCount, UploadedCountSession, ErrorCount);
                 StatusChanged?.Invoke($"[BACKUP] ciclo concluído: pendentes={PendingCount}, enviados(sessão)={UploadedCountSession}, erros={ErrorCount}");
             }
             catch (OperationCanceledException)
             {
-                _logger?.LogInformation("Ciclo de backup cancelado");
                 throw;
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Falha no ciclo de backup");
                 StatusChanged?.Invoke($"[BACKUP] ciclo falhou: {ex.Message}");
             }
             finally
@@ -407,7 +404,7 @@ namespace leituraWPF.Services
                         UploadedCountSession++;
                         PendingCount--;
 
-                        _logger?.LogInformation("Arquivo enviado com sucesso: {FileName} ({Size} bytes)", name, size);
+                        StatusChanged?.Invoke($"[BACKUP] Arquivo enviado: {name} ({size} bytes)");
                         FileUploaded?.Invoke(file, remote, size);
                         CountersChanged?.Invoke(PendingCount, UploadedCountSession);
                         CountersChangedDetailed?.Invoke(PendingCount, UploadedCountSession, ErrorCount);
@@ -416,7 +413,6 @@ namespace leituraWPF.Services
                     catch (HttpRequestException ex) when (IsNetworkError(ex))
                     {
                         lastException = ex;
-                        _logger?.LogWarning(ex, "Erro de rede ao enviar {FileName}, tentativa {Attempt}/{MaxAttempts}", name, attempt, maxAttempts);
                         StatusChanged?.Invoke($"[BACKUP] rede indisponível em {name}, tentativa {attempt}");
 
                         if (attempt < maxAttempts)
@@ -425,7 +421,6 @@ namespace leituraWPF.Services
                     catch (InvalidOperationException ex) when (ex.Message.Contains("409"))
                     {
                         lastException = ex;
-                        _logger?.LogWarning("Conflito ao enviar {FileName}, tentativa {Attempt}/{MaxAttempts}", name, attempt, maxAttempts);
                         StatusChanged?.Invoke($"[BACKUP] conflito em {name}, tentativa {attempt}");
 
                         if (attempt < maxAttempts)
@@ -434,7 +429,6 @@ namespace leituraWPF.Services
                     catch (Exception ex)
                     {
                         lastException = ex;
-                        _logger?.LogError(ex, "Erro ao enviar {FileName}", name);
                         break; // Erro não recuperável
                     }
                 }
@@ -445,7 +439,7 @@ namespace leituraWPF.Services
                 ErrorCount++;
                 PendingCount--;
 
-                _logger?.LogError(lastException, "Falha definitiva ao enviar {FileName} após {MaxAttempts} tentativas", name, maxAttempts);
+                StatusChanged?.Invoke($"[BACKUP] Falha definitiva em {name} após {maxAttempts} tentativas");
                 FileUploadFailed?.Invoke(file, name, lastException ?? new Exception("Erro desconhecido"));
                 CountersChanged?.Invoke(PendingCount, UploadedCountSession);
                 CountersChangedDetailed?.Invoke(PendingCount, UploadedCountSession, ErrorCount);
@@ -456,7 +450,7 @@ namespace leituraWPF.Services
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Erro inesperado ao processar {FileName}", name);
+                StatusChanged?.Invoke($"[BACKUP] Erro inesperado em {name}: {ex.Message}");
                 await MoveToErrorAsync(file, rel, ex);
                 ErrorCount++;
                 PendingCount--;
@@ -469,8 +463,7 @@ namespace leituraWPF.Services
         {
             return ex.Message.Contains("timeout") ||
                    ex.Message.Contains("connection") ||
-                   ex.Message.Contains("network") ||
-                   ex.InnerException is SocketException;
+                   ex.Message.Contains("network");
         }
 
         private async Task MoveToSentAsync(string sourceFile, string relativePath)
@@ -498,7 +491,11 @@ namespace leituraWPF.Services
                 Exception = exception?.ToString() ?? "Erro desconhecido"
             };
 
-            await File.WriteAllTextAsync(errorFile, JsonSerializer.Serialize(errorInfo, new JsonSerializerOptions { WriteIndented = true }));
+            try
+            {
+                await File.WriteAllTextAsync(errorFile, JsonSerializer.Serialize(errorInfo, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { /* ignore */ }
 
             if (File.Exists(dst))
                 File.Delete(dst);
@@ -526,7 +523,6 @@ namespace leituraWPF.Services
                 using var resp = await _http.GetAsync(url, ct);
                 if (!resp.IsSuccessStatusCode)
                 {
-                    _logger?.LogWarning("Falha ao resolver DriveId: {StatusCode} {ReasonPhrase}", resp.StatusCode, resp.ReasonPhrase);
                     return null;
                 }
 
@@ -535,7 +531,7 @@ namespace leituraWPF.Services
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Erro ao resolver DriveId");
+                StatusChanged?.Invoke($"[BACKUP] Erro ao resolver DriveId: {ex.Message}");
                 return null;
             }
         }
@@ -586,7 +582,7 @@ namespace leituraWPF.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Erro ao garantir pasta {Folder}", current);
+                    StatusChanged?.Invoke($"[BACKUP] Erro ao garantir pasta {current}: {ex.Message}");
                     throw;
                 }
             }
@@ -653,7 +649,7 @@ namespace leituraWPF.Services
                 if (size > 50 * 1024 * 1024) // > 50MB
                 {
                     var progress = (double)sent / size * 100;
-                    _logger?.LogDebug("Upload progress {FileName}: {Progress:F1}%", name, progress);
+                    StatusChanged?.Invoke($"[BACKUP] Upload progress {name}: {progress:F1}%");
                 }
             }
         }
@@ -683,7 +679,7 @@ namespace leituraWPF.Services
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Erro ao parar serviço durante dispose");
+                StatusChanged?.Invoke($"[BACKUP] Erro ao parar serviço: {ex.Message}");
             }
 
             _timer?.Dispose();
