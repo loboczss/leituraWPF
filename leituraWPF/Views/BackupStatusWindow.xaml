@@ -430,20 +430,28 @@
 
             <TabItem Header="📋 Histórico">
                 <Grid Margin="20">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
+                    <TextBox Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,10"
+                             Text="{Binding HistorySearchText, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Pesquisar O.S"/>
+
                     <!-- Histórico de enviados -->
-                    <GroupBox Grid.Column="0" Style="{StaticResource FluidGroupBox}">
+                    <GroupBox Grid.Row="1" Grid.Column="0" Style="{StaticResource FluidGroupBox}">
                         <GroupBox.Header>
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="12" Height="12" Fill="#66BB6A" Margin="0,0,10,0"/>
                                 <TextBlock Text="Histórico - Enviados" FontWeight="SemiBold"/>
                             </StackPanel>
                         </GroupBox.Header>
-                        <DataGrid x:Name="HistorySentList" ItemsSource="{Binding HistorySent}" 
+                        <DataGrid x:Name="HistorySentList" ItemsSource="{Binding HistorySent}"
                                   AutoGenerateColumns="False" IsReadOnly="True">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="📅 Data" 
@@ -463,14 +471,14 @@
                     </GroupBox>
 
                     <!-- Histórico de erros -->
-                    <GroupBox Grid.Column="1" Style="{StaticResource FluidGroupBox}">
+                    <GroupBox Grid.Row="1" Grid.Column="1" Style="{StaticResource FluidGroupBox}">
                         <GroupBox.Header>
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="12" Height="12" Fill="#EF5350" Margin="0,0,10,0"/>
                                 <TextBlock Text="Histórico - Erros" FontWeight="SemiBold"/>
                             </StackPanel>
                         </GroupBox.Header>
-                        <DataGrid x:Name="HistoryErrorList" ItemsSource="{Binding HistoryErrors}" 
+                        <DataGrid x:Name="HistoryErrorList" ItemsSource="{Binding HistoryErrors}"
                                   AutoGenerateColumns="False" IsReadOnly="True">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="📅 Data" 

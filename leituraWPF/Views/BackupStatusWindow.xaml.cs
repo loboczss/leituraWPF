@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using leituraWPF.Services;
+using System.Text.RegularExpressions;
+using System.Windows.Data;
 
 namespace leituraWPF
 {
@@ -21,6 +23,9 @@ namespace leituraWPF
         private readonly ObservableCollection<BackupItem> _errors = new();
         private readonly ObservableCollection<BackupItem> _historySent = new();
         private readonly ObservableCollection<BackupItem> _historyErrors = new();
+        private ICollectionView _historySentView;
+        private ICollectionView _historyErrorView;
+        private string _historySearchText = string.Empty;
         private DispatcherTimer _updateTimer;
         private readonly Stopwatch _stopwatch;
         private CancellationTokenSource _cancellationTokenSource;
@@ -64,6 +69,18 @@ namespace leituraWPF
         public ObservableCollection<BackupItem> HistorySent => _historySent;
 
         public ObservableCollection<BackupItem> HistoryErrors => _historyErrors;
+
+        public string HistorySearchText
+        {
+            get => _historySearchText;
+            set
+            {
+                _historySearchText = value;
+                OnPropertyChanged();
+                _historySentView?.Refresh();
+                _historyErrorView?.Refresh();
+            }
+        }
         #endregion
 
         #region Constructor
@@ -90,6 +107,11 @@ namespace leituraWPF
             PendingList.ItemsSource = _pending;
             SentList.ItemsSource = _sent;
             ErrorList.ItemsSource = _errors;
+
+            _historySentView = CollectionViewSource.GetDefaultView(_historySent);
+            _historySentView.Filter = HistoryFilter;
+            _historyErrorView = CollectionViewSource.GetDefaultView(_historyErrors);
+            _historyErrorView.Filter = HistoryFilter;
         }
 
         private void InitializeTimer()
@@ -314,7 +336,7 @@ namespace leituraWPF
                     var info = new FileInfo(filePath);
                     _historySent.Add(new BackupItem
                     {
-                        FileName = Path.GetFileName(filePath),
+                        FileName = ExtractOsNumber(Path.GetFileName(filePath)),
                         CompletedAt = info.LastWriteTime,
                         FilePath = filePath
                     });
@@ -329,7 +351,7 @@ namespace leituraWPF
                     var info = new FileInfo(filePath);
                     _historyErrors.Add(new BackupItem
                     {
-                        FileName = Path.GetFileName(filePath),
+                        FileName = ExtractOsNumber(Path.GetFileName(filePath)),
                         CompletedAt = info.LastWriteTime,
                         FilePath = filePath
                     });
@@ -447,6 +469,20 @@ namespace leituraWPF
             }
 
             return $"{number:n1} {suffixes[counter]}";
+        }
+
+        private bool HistoryFilter(object obj)
+        {
+            if (obj is not BackupItem item) return false;
+            if (string.IsNullOrWhiteSpace(HistorySearchText)) return true;
+            return item.FileName?.Contains(HistorySearchText, StringComparison.OrdinalIgnoreCase) == true;
+        }
+
+        private static string ExtractOsNumber(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName)) return fileName;
+            var match = Regex.Match(fileName, "\\d+");
+            return match.Success ? match.Value : fileName;
         }
 
         private async Task CleanupAsync()
