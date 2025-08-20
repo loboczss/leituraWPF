@@ -17,6 +17,7 @@ namespace leituraWPF
     public partial class LoginWindow : Window, INotifyPropertyChanged
     {
         private readonly FuncionarioService _funcService;
+        private readonly BackupUploaderService _backup;
         private IDictionary<string, Funcionario> _funcionarios = new Dictionary<string, Funcionario>();
         private bool _isLoading;
         private string _statusMessage = string.Empty;
@@ -52,11 +53,32 @@ namespace leituraWPF
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public LoginWindow(FuncionarioService funcService)
+        public LoginWindow(FuncionarioService funcService, BackupUploaderService backup)
         {
             InitializeComponent();
             _funcService = funcService ?? throw new ArgumentNullException(nameof(funcService));
+            _backup = backup ?? throw new ArgumentNullException(nameof(backup));
             DataContext = this;
+
+            _backup.CountersChanged += Backup_CountersChanged;
+            UpdateProgress(_backup.PendingCount, _backup.UploadedCountSession);
+        }
+
+        private void Backup_CountersChanged(int pend, long sent)
+        {
+            Dispatcher.Invoke(() => UpdateProgress(pend, sent));
+        }
+
+        private void UpdateProgress(int pending, long sent)
+        {
+            var total = pending + sent;
+            var percent = total > 0 ? sent * 100.0 / total : 0;
+            TxtBackupProgress.Text = total > 0
+                ? $"Backup: {sent}/{total} ({percent:0}%)"
+                : "Backup: 0/0 (0%)";
+            var statusBorder = FindName("StatusBorder") as FrameworkElement;
+            if (statusBorder != null)
+                statusBorder.Visibility = Visibility.Visible;
         }
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -344,6 +366,7 @@ namespace leituraWPF
         // Cleanup
         protected override void OnClosed(EventArgs e)
         {
+            _backup.CountersChanged -= Backup_CountersChanged;
             PropertyChanged = null;
             base.OnClosed(e);
         }
