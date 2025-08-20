@@ -130,7 +130,6 @@ namespace leituraWPF
             _backup.CountersChangedDetailed += OnCountersChanged;
 
             Loaded += BackupStatusWindow_Loaded;
-            Closing += BackupStatusWindow_Closing;
         }
 
         private async Task InitializeAsync()
@@ -168,25 +167,6 @@ namespace leituraWPF
             CurrentStatusText = "Backup iniciado";
         }
 
-        private async void BackupStatusWindow_Closing(object sender, CancelEventArgs e)
-        {
-            if (!IsCompleted && _pending.Any())
-            {
-                var result = System.Windows.MessageBox.Show(
-                    "O backup ainda está em andamento. Deseja realmente fechar?",
-                    "Backup em Progresso",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-
-                if (result == MessageBoxResult.No)
-                {
-                    e.Cancel = true;
-                    return;
-                }
-            }
-
-            await CleanupAsync();
-        }
 
         private void UpdateTimer_Tick(object sender, EventArgs e)
         {
@@ -305,7 +285,7 @@ namespace leituraWPF
                 var pendingFiles = _backup.GetPendingFiles();
                 foreach (var filePath in pendingFiles)
                 {
-                    var fileName = GetDisplayName(filePath);
+                    var fileName = Path.GetFileName(filePath);
                     var fileInfo = new FileInfo(filePath);
 
                     _pending.Add(new BackupItem

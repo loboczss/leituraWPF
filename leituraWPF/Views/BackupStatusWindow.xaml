@@ -85,6 +85,61 @@
             </Setter>
         </Style>
 
+        <!-- TextBox Simples e Funcional -->
+        <Style x:Key="ModernTextBox" TargetType="TextBox">
+            <Setter Property="Background" Value="#ffffff"/>
+            <Setter Property="Foreground" Value="#212529"/>
+            <Setter Property="BorderBrush" Value="#007ACC"/>
+            <Setter Property="BorderThickness" Value="0,0,0,2"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#007ACC"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#007ACC" BlurRadius="6" ShadowDepth="0" Opacity="0.4"/>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="#5DADE2"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- TextBox com cantos arredondados (template seguro) -->
+        <Style x:Key="RoundedTextBox" TargetType="TextBox" BasedOn="{StaticResource ModernTextBox}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8"
+                            SnapsToDevicePixels="True">     
+                            <!-- PART_ContentHost sem binds exóticos -->
+                            <ScrollViewer x:Name="PART_ContentHost"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.56"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#007ACC"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        
+
         <!-- Estilo fluido para GroupBox -->
         <Style x:Key="FluidGroupBox" TargetType="GroupBox">
             <Setter Property="BorderBrush" Value="{StaticResource BorderGray}"/>
@@ -304,7 +359,7 @@
                                                 </Grid.ColumnDefinitions>
                                                 <Ellipse Grid.Column="0" Width="6" Height="6" Fill="#FFB74D" 
                                                          VerticalAlignment="Top" Margin="0,4,12,0"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding}" TextWrapping="Wrap" 
+                                                <TextBlock Grid.Column="1" Text="{Binding FileName}" TextWrapping="Wrap"
                                                            FontSize="12" Foreground="{StaticResource TextGray}"/>
                                             </Grid>
                                         </Border>
@@ -334,9 +389,9 @@
                                                     <TextBlock Grid.Column="0" Text="✓" Foreground="#66BB6A" 
                                                            FontWeight="Bold" FontSize="14" Margin="0,0,12,0"/>
                                                     <StackPanel Grid.Column="1">
-                                                        <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" 
+                                                    <TextBlock Text="{Binding FileName}" TextWrapping="Wrap" FontSize="12"
                                                                Foreground="{StaticResource TextGray}"/>
-                                                        <TextBlock Text="Enviado com sucesso" FontSize="10"
+                                                    <TextBlock Text="Enviado com sucesso" FontSize="12"
                                                                Foreground="#66BB6A" FontStyle="Italic" Margin="0,2,0,0"/>
                                                     </StackPanel>
                                             </Grid>
@@ -367,9 +422,9 @@
                                                 <TextBlock Grid.Column="0" Text="⚠" Foreground="#EF5350" 
                                                            FontWeight="Bold" FontSize="14" Margin="0,0,12,0"/>
                                                 <StackPanel Grid.Column="1">
-                                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" 
+                                                    <TextBlock Text="{Binding FileName}" TextWrapping="Wrap" FontSize="12"
                                                                Foreground="{StaticResource TextGray}"/>
-                                                    <TextBlock Text="Erro no processamento" FontSize="10"
+                                                    <TextBlock Text="Erro no processamento" FontSize="12"
                                                                Foreground="#EF5350" FontStyle="Italic" Margin="0,2,0,0"/>
                                                 </StackPanel>
                                             </Grid>
@@ -439,9 +494,14 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBox Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,10"
-                             Text="{Binding HistorySearchText, UpdateSourceTrigger=PropertyChanged}"
-                             ToolTip="Pesquisar O.S"/>
+                        
+                        <TextBox Grid.Row="0" Grid.ColumnSpan="2" Margin="10,0,8,10" Style="{StaticResource RoundedTextBox}" 
+                                 Text="{Binding HistorySearchText, UpdateSourceTrigger=PropertyChanged}"
+                            Height="42" FontSize="16" FontWeight="SemiBold" 
+                            ToolTip="Pesquisar O.S"/>
+                   
+
+                             
 
                     <!-- Histórico de enviados -->
                     <GroupBox Grid.Row="1" Grid.Column="0" Style="{StaticResource FluidGroupBox}">
