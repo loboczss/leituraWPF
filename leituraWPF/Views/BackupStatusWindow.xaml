@@ -82,158 +82,217 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-
-        <!-- Cabeçalho com informações resumidas -->
-        <Border Grid.Row="0" Background="#2196F3" CornerRadius="8" Padding="16,12" Margin="0,0,0,16">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <TextBlock Grid.Column="0" Text="Backup em Progresso" 
-                          FontSize="16" FontWeight="Bold" Foreground="White" 
-                          VerticalAlignment="Center"/>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="20,0">
-                    <Ellipse Width="12" Height="12" Fill="#FFC107" Margin="0,0,8,0"/>
-                    <TextBlock x:Name="PendingCount" Text="0 Pendentes" 
-                              Foreground="White" FontWeight="SemiBold"/>
-                </StackPanel>
-
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="20,0">
-                    <Ellipse Width="12" Height="12" Fill="#4CAF50" Margin="0,0,8,0"/>
-                    <TextBlock x:Name="SentCount" Text="0 Enviados" 
-                              Foreground="White" FontWeight="SemiBold"/>
-                </StackPanel>
-
-                <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="20,0">
-                    <Ellipse Width="12" Height="12" Fill="#F44336" Margin="0,0,8,0"/>
-                    <TextBlock x:Name="ErrorCount" Text="0 Erros" 
-                              Foreground="White" FontWeight="SemiBold"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <!-- Área principal com as listas -->
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- Lista de Pendentes -->
-            <GroupBox Grid.Column="0" Style="{StaticResource ModernGroupBox}">
-                <GroupBox.Header>
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse Width="10" Height="10" Fill="#FFC107" Margin="0,0,8,0"/>
-                        <TextBlock Text="Pendentes" Foreground="#666"/>
-                    </StackPanel>
-                </GroupBox.Header>
-                <ListBox x:Name="PendingList" Style="{StaticResource ModernListBox}">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="#FFF8E1" BorderBrush="#FFE082" 
-                                   BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,2">
-                                <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12"/>
-                            </Border>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </GroupBox>
-
-            <!-- Lista de Enviados -->
-            <GroupBox Grid.Column="1" Style="{StaticResource ModernGroupBox}">
-                <GroupBox.Header>
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse Width="10" Height="10" Fill="#4CAF50" Margin="0,0,8,0"/>
-                        <TextBlock Text="Enviados" Foreground="#666"/>
-                    </StackPanel>
-                </GroupBox.Header>
-                <ListBox x:Name="SentList" Style="{StaticResource ModernListBox}">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="#E8F5E8" BorderBrush="#81C784" 
-                                   BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,2">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12"/>
-                                    <TextBlock Text="✓ Concluído" FontSize="10" 
-                                              Foreground="#4CAF50" FontWeight="Bold"/>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </GroupBox>
-
-            <!-- Lista de Erros -->
-            <GroupBox Grid.Column="2" Style="{StaticResource ModernGroupBox}">
-                <GroupBox.Header>
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse Width="10" Height="10" Fill="#F44336" Margin="0,0,8,0"/>
-                        <TextBlock Text="Erros" Foreground="#666"/>
-                    </StackPanel>
-                </GroupBox.Header>
-                <ListBox x:Name="ErrorList" Style="{StaticResource ModernListBox}">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="#FFEBEE" BorderBrush="#EF5350" 
-                                   BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,2">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12"/>
-                                    <TextBlock Text="⚠ Erro" FontSize="10" 
-                                              Foreground="#F44336" FontWeight="Bold"/>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </GroupBox>
-        </Grid>
-
-        <!-- Área de progresso -->
-        <Border Grid.Row="2" Background="White" BorderBrush="#E0E0E0" 
-               BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16,0,0">
-            <Grid>
+    <TabControl>
+        <TabItem Header="Status Atual">
+            <Grid Margin="16">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0" Margin="0,0,0,8">
+                <!-- Cabeçalho com informações resumidas -->
+                <Border Grid.Row="0" Background="#2196F3" CornerRadius="8" Padding="16,12" Margin="0,0,0,16">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="Backup em Progresso"
+                                  FontSize="16" FontWeight="Bold" Foreground="White"
+                                  VerticalAlignment="Center"/>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="20,0">
+                            <Ellipse Width="12" Height="12" Fill="#FFC107" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="PendingCount" Text="0 Pendentes"
+                                      Foreground="White" FontWeight="SemiBold"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="20,0">
+                            <Ellipse Width="12" Height="12" Fill="#4CAF50" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="SentCount" Text="0 Enviados"
+                                      Foreground="White" FontWeight="SemiBold"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="20,0">
+                            <Ellipse Width="12" Height="12" Fill="#F44336" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="ErrorCount" Text="0 Erros"
+                                      Foreground="White" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Área principal com as listas -->
+                <Grid Grid.Row="1">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" Text="Progresso:" FontWeight="SemiBold" 
-                              VerticalAlignment="Center"/>
-                    <TextBlock x:Name="ProgressText" Grid.Column="2" Text="0%" 
-                              FontWeight="Bold" FontSize="14" Foreground="#2196F3"/>
+                    <!-- Lista de Pendentes -->
+                    <GroupBox Grid.Column="0" Style="{StaticResource ModernGroupBox}">
+                        <GroupBox.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="10" Height="10" Fill="#FFC107" Margin="0,0,8,0"/>
+                                <TextBlock Text="Pendentes" Foreground="#666"/>
+                            </StackPanel>
+                        </GroupBox.Header>
+                        <ListBox x:Name="PendingList" Style="{StaticResource ModernListBox}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FFF8E1" BorderBrush="#FFE082"
+                                           BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,2">
+                                        <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </GroupBox>
+
+                    <!-- Lista de Enviados -->
+                    <GroupBox Grid.Column="1" Style="{StaticResource ModernGroupBox}">
+                        <GroupBox.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="10" Height="10" Fill="#4CAF50" Margin="0,0,8,0"/>
+                                <TextBlock Text="Enviados" Foreground="#666"/>
+                            </StackPanel>
+                        </GroupBox.Header>
+                        <ListBox x:Name="SentList" Style="{StaticResource ModernListBox}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#E8F5E8" BorderBrush="#81C784"
+                                           BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,2">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12"/>
+                                            <TextBlock Text="✓ Concluído" FontSize="10"
+                                                      Foreground="#4CAF50" FontWeight="Bold"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </GroupBox>
+
+                    <!-- Lista de Erros -->
+                    <GroupBox Grid.Column="2" Style="{StaticResource ModernGroupBox}">
+                        <GroupBox.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="10" Height="10" Fill="#F44336" Margin="0,0,8,0"/>
+                                <TextBlock Text="Erros" Foreground="#666"/>
+                            </StackPanel>
+                        </GroupBox.Header>
+                        <ListBox x:Name="ErrorList" Style="{StaticResource ModernListBox}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FFEBEE" BorderBrush="#EF5350"
+                                           BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,2">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12"/>
+                                            <TextBlock Text="⚠ Erro" FontSize="10"
+                                                      Foreground="#F44336" FontWeight="Bold"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </GroupBox>
                 </Grid>
 
-                <ProgressBar x:Name="ProgressBar" Grid.Row="1" 
-                            Style="{StaticResource ModernProgressBar}"
-                            Minimum="0" Maximum="100" Margin="0,0,0,8"/>
+                <!-- Área de progresso -->
+                <Border Grid.Row="2" Background="White" BorderBrush="#E0E0E0"
+                       BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
 
-                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center">
-                    <TextBlock x:Name="StatusText" Text="{Binding CurrentStatusText}" 
-                              FontStyle="Italic" Foreground="#666" FontSize="12"/>
-                    <TextBlock x:Name="TimeElapsed" Text="{Binding CurrentTimeElapsed}" 
-                              FontSize="12" Foreground="#666" Margin="20,0,0,0"/>
-                </StackPanel>
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="Progresso:" FontWeight="SemiBold"
+                                      VerticalAlignment="Center"/>
+                            <TextBlock x:Name="ProgressText" Grid.Column="2" Text="0%"
+                                      FontWeight="Bold" FontSize="14" Foreground="#2196F3"/>
+                        </Grid>
+
+                        <ProgressBar x:Name="ProgressBar" Grid.Row="1"
+                                    Style="{StaticResource ModernProgressBar}"
+                                    Minimum="0" Maximum="100" Margin="0,0,0,8"/>
+
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock x:Name="StatusText" Text="{Binding CurrentStatusText}"
+                                      FontStyle="Italic" Foreground="#666" FontSize="12"/>
+                            <TextBlock x:Name="TimeElapsed" Text="{Binding CurrentTimeElapsed}"
+                                      FontSize="12" Foreground="#666" Margin="20,0,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
             </Grid>
-        </Border>
-    </Grid>
+        </TabItem>
+
+        <TabItem Header="Histórico">
+            <Grid Margin="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Histórico de enviados -->
+                <GroupBox Grid.Column="0" Style="{StaticResource ModernGroupBox}">
+                    <GroupBox.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="10" Height="10" Fill="#4CAF50" Margin="0,0,8,0"/>
+                            <TextBlock Text="Enviados" Foreground="#666"/>
+                        </StackPanel>
+                    </GroupBox.Header>
+                    <DataGrid x:Name="HistorySentList" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Data" Binding="{Binding CompletedAt, StringFormat={}{0:dd/MM/yyyy HH:mm}}" Width="150"/>
+                            <DataGridTextColumn Header="Arquivo" Binding="{Binding FileName}" Width="*"/>
+                            <DataGridTemplateColumn Header="Ação" Width="100">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Abrir local" Tag="{Binding FilePath}" Click="OpenFileLocation_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </GroupBox>
+
+                <!-- Histórico de erros -->
+                <GroupBox Grid.Column="1" Style="{StaticResource ModernGroupBox}">
+                    <GroupBox.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="10" Height="10" Fill="#F44336" Margin="0,0,8,0"/>
+                            <TextBlock Text="Erros" Foreground="#666"/>
+                        </StackPanel>
+                    </GroupBox.Header>
+                    <DataGrid x:Name="HistoryErrorList" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Data" Binding="{Binding CompletedAt, StringFormat={}{0:dd/MM/yyyy HH:mm}}" Width="150"/>
+                            <DataGridTextColumn Header="Arquivo" Binding="{Binding FileName}" Width="*"/>
+                            <DataGridTemplateColumn Header="Ação" Width="100">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Abrir local" Tag="{Binding FilePath}" Click="OpenFileLocation_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </GroupBox>
+            </Grid>
+        </TabItem>
+    </TabControl>
 </Window>
