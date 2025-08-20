@@ -678,7 +678,9 @@
                     <StackPanel Orientation="Vertical" Margin="0,0,20,0" HorizontalAlignment="Right">
                         <TextBlock x:Name="TxtSyncStatus" Text="Backup sincronizado"
                                    FontWeight="SemiBold" FontSize="13" Foreground="#6c757d"
-                                   TextAlignment="Right"/>
+                                   TextAlignment="Right" Cursor="Hand"
+                                   MouseLeftButtonUp="TxtSyncStatus_MouseLeftButtonUp"/>
+        
                         <TextBlock x:Name="TxtLastUpdate" Text="Última atualização: --"
                                    FontSize="12" Foreground="#adb5bd" TextAlignment="Right"/>
                     </StackPanel>
