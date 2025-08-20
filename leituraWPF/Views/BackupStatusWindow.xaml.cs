@@ -19,6 +19,8 @@ namespace leituraWPF
         private readonly ObservableCollection<BackupItem> _pending = new();
         private readonly ObservableCollection<BackupItem> _sent = new();
         private readonly ObservableCollection<BackupItem> _errors = new();
+        private readonly ObservableCollection<BackupItem> _historySent = new();
+        private readonly ObservableCollection<BackupItem> _historyErrors = new();
         private DispatcherTimer _updateTimer;
         private readonly Stopwatch _stopwatch;
         private CancellationTokenSource _cancellationTokenSource;
@@ -72,7 +74,7 @@ namespace leituraWPF
             InitializeTimer();
             SetupEventHandlers();
 
-            // Inicialização assíncrona
+            // InicializaÃ§Ã£o assÃ­ncrona
             _ = Task.Run(InitializeAsync);
         }
         #endregion
@@ -84,6 +86,8 @@ namespace leituraWPF
             PendingList.ItemsSource = _pending;
             SentList.ItemsSource = _sent;
             ErrorList.ItemsSource = _errors;
+            HistorySentList.ItemsSource = _historySent;
+            HistoryErrorList.ItemsSource = _historyErrors;
         }
 
         private void InitializeTimer()
@@ -116,19 +120,20 @@ namespace leituraWPF
                 {
                     CurrentStatusText = "Carregando arquivos...";
                     RefreshCollections();
+                    LoadHistory();
                     UpdateProgress();
                     UpdateCounters();
                 });
             }
             catch (OperationCanceledException)
             {
-                // Operação foi cancelada
+                // OperaÃ§Ã£o foi cancelada
             }
             catch (Exception ex)
             {
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    CurrentStatusText = $"Erro na inicialização: {ex.Message}";
+                    CurrentStatusText = $"Erro na inicializaÃ§Ã£o: {ex.Message}";
                 });
             }
         }
@@ -145,7 +150,7 @@ namespace leituraWPF
             if (!IsCompleted && _pending.Any())
             {
                 var result = System.Windows.MessageBox.Show(
-                    "O backup ainda está em andamento. Deseja realmente fechar?",
+                    "O backup ainda estÃ¡ em andamento. Deseja realmente fechar?",
                     "Backup em Progresso",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Question);
@@ -187,7 +192,7 @@ namespace leituraWPF
                         _pending.Remove(pendingItem);
                     }
 
-                    // Adiciona à lista de enviados se não existir
+                    // Adiciona Ã  lista de enviados se nÃ£o existir
                     if (!_sent.Any(x => x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase)))
                     {
                         _sent.Add(new BackupItem
@@ -201,6 +206,7 @@ namespace leituraWPF
 
                     UpdateProgress();
                     UpdateCounters();
+                    LoadHistory();
                 }, DispatcherPriority.Background);
             }
             catch (Exception ex)
@@ -225,7 +231,7 @@ namespace leituraWPF
                         _pending.Remove(pendingItem);
                     }
 
-                    // Adiciona à lista de erros se não existir
+                    // Adiciona Ã  lista de erros se nÃ£o existir
                     if (!_errors.Any(x => x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase)))
                     {
                         _errors.Add(new BackupItem
@@ -238,6 +244,7 @@ namespace leituraWPF
 
                     UpdateProgress();
                     UpdateCounters();
+                    LoadHistory();
                 }, DispatcherPriority.Background);
             }
             catch (Exception updateEx)
@@ -253,6 +260,7 @@ namespace leituraWPF
                 await Dispatcher.InvokeAsync(() =>
                 {
                     RefreshCollections();
+                    LoadHistory();
                     UpdateProgress();
                     UpdateCounters();
                 }, DispatcherPriority.Background);
@@ -284,29 +292,50 @@ namespace leituraWPF
                         FilePath = filePath
                     });
                 }
-
-                // Atualiza enviados
-                _sent.Clear();
-                var sentFiles = _backup.GetSentFiles();
-                foreach (var filePath in sentFiles)
-                {
-                    var fileName = Path.GetFileName(filePath);
-                    _sent.Add(new BackupItem { FileName = fileName });
-                }
-
-                // Atualiza erros
-                _errors.Clear();
-                var errorFiles = _backup.GetErrorFiles();
-                foreach (var filePath in errorFiles)
-                {
-                    var fileName = Path.GetFileName(filePath);
-                    _errors.Add(new BackupItem { FileName = fileName });
-                }
             }
             catch (Exception ex)
             {
                 CurrentStatusText = $"Erro ao atualizar listas: {ex.Message}";
                 Debug.WriteLine($"Erro em RefreshCollections: {ex}");
+            }
+        }
+
+        private void LoadHistory()
+        {
+            try
+            {
+                _historySent.Clear();
+                var sentFiles = _backup.GetSentFiles()
+                    .OrderByDescending(f => File.GetLastWriteTime(f));
+                foreach (var filePath in sentFiles)
+                {
+                    var info = new FileInfo(filePath);
+                    _historySent.Add(new BackupItem
+                    {
+                        FileName = Path.GetFileName(filePath),
+                        CompletedAt = info.LastWriteTime,
+                        FilePath = filePath
+                    });
+                }
+
+                _historyErrors.Clear();
+                var errorFiles = _backup.GetErrorFiles()
+                    .Where(f => !f.EndsWith(".error", StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(f => File.GetLastWriteTime(f));
+                foreach (var filePath in errorFiles)
+                {
+                    var info = new FileInfo(filePath);
+                    _historyErrors.Add(new BackupItem
+                    {
+                        FileName = Path.GetFileName(filePath),
+                        CompletedAt = info.LastWriteTime,
+                        FilePath = filePath
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Erro ao carregar histÃ³rico: {ex.Message}");
             }
         }
 
@@ -334,8 +363,8 @@ namespace leituraWPF
                     IsCompleted = true;
                     _stopwatch.Stop();
                     CurrentStatusText = _errors.Any() ?
-                        $"Backup concluído com {_errors.Count} erro(s)" :
-                        "Backup concluído com sucesso!";
+                        $"Backup concluÃ­do com {_errors.Count} erro(s)" :
+                        "Backup concluÃ­do com sucesso!";
                 }
             }
             catch (Exception ex)
@@ -383,6 +412,26 @@ namespace leituraWPF
             }
         }
 
+        private void OpenFileLocation_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button btn && btn.Tag is string path && File.Exists(path))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"/select,\"{path}\"",
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Erro ao abrir local do arquivo: {ex.Message}");
+                }
+            }
+        }
+
         private static string FormatFileSize(long bytes)
         {
             string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
@@ -414,7 +463,7 @@ namespace leituraWPF
                     _backup.CountersChangedDetailed -= OnCountersChanged;
                 }
 
-                // Aguarda um pouco para operações assíncronas terminarem
+                // Aguarda um pouco para operaÃ§Ãµes assÃ­ncronas terminarem
                 await Task.Delay(100);
             }
             catch (Exception ex)
