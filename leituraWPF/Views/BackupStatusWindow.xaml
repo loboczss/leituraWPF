@@ -255,7 +255,7 @@
                             <TextBlock Text="Enviados" Foreground="#666"/>
                         </StackPanel>
                     </GroupBox.Header>
-                    <DataGrid x:Name="HistorySentList" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column">
+                    <DataGrid x:Name="HistorySentList" ItemsSource="{Binding HistorySent}" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Data" Binding="{Binding CompletedAt, StringFormat={}{0:dd/MM/yyyy HH:mm}}" Width="150"/>
                             <DataGridTextColumn Header="Arquivo" Binding="{Binding FileName}" Width="*"/>
@@ -278,7 +278,7 @@
                             <TextBlock Text="Erros" Foreground="#666"/>
                         </StackPanel>
                     </GroupBox.Header>
-                    <DataGrid x:Name="HistoryErrorList" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column">
+                    <DataGrid x:Name="HistoryErrorList" ItemsSource="{Binding HistoryErrors}" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Data" Binding="{Binding CompletedAt, StringFormat={}{0:dd/MM/yyyy HH:mm}}" Width="150"/>
                             <DataGridTextColumn Header="Arquivo" Binding="{Binding FileName}" Width="*"/>
