@@ -60,6 +60,10 @@ namespace leituraWPF
                 OnPropertyChanged();
             }
         }
+
+        public ObservableCollection<BackupItem> HistorySent => _historySent;
+
+        public ObservableCollection<BackupItem> HistoryErrors => _historyErrors;
         #endregion
 
         #region Constructor
@@ -86,8 +90,6 @@ namespace leituraWPF
             PendingList.ItemsSource = _pending;
             SentList.ItemsSource = _sent;
             ErrorList.ItemsSource = _errors;
-            HistorySentList.ItemsSource = _historySent;
-            HistoryErrorList.ItemsSource = _historyErrors;
         }
 
         private void InitializeTimer()
