@@ -504,8 +504,16 @@ namespace leituraWPF
                     return;
                 }
 
-                // Achou o record no cache → renomeia aqui mesmo (manutenção)
+                // Achou o record no cache → confirmar dados e renomear
                 if (!await EnsureSourceFolderHasFilesAsync()) return;
+
+                var confirm = new ClientInfoWindow(record) { Owner = this };
+                var confirmed = confirm.ShowDialog() == true;
+                if (!confirmed)
+                {
+                    SetStatus("Cancelado.");
+                    return;
+                }
 
                 SetStatus("Processando manutenção...");
                 progress.IsIndeterminate = false;
