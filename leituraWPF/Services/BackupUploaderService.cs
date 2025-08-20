@@ -34,13 +34,18 @@ namespace leituraWPF.Services
         private readonly SemaphoreSlim _mutex = new(1, 1);
         private readonly HashSet<string> _ensured = new(StringComparer.OrdinalIgnoreCase);
         private CancellationTokenSource? _cancellationTokenSource;
+        private Task? _backgroundTask;
 
         private bool _disposed;
 
-        // Estatísticas
-        public int PendingCount { get; private set; }
-        public long UploadedCountSession { get; private set; }
-        public long ErrorCount { get; private set; }
+        // Estatísticas (thread-safe)
+        private int _pendingCount;
+        private long _uploadedCountSession;
+        private long _errorCount;
+
+        public int PendingCount => _pendingCount;
+        public long UploadedCountSession => _uploadedCountSession;
+        public long ErrorCount => _errorCount;
         public DateTime? LastRunUtc { get; private set; }
         public DateTime? LastSuccessUtc { get; private set; }
         public bool IsRunning { get; private set; }
@@ -49,8 +54,8 @@ namespace leituraWPF.Services
         public event Action<string>? StatusChanged;
         public event Action<string, string, long>? FileUploaded;
         public event Action<string, string, Exception>? FileUploadFailed;
-        public event Action<int, long>? CountersChanged; // pending, uploaded (mantendo compatibilidade)
-        public event Action<int, long, long>? CountersChangedDetailed; // pending, uploaded, errors
+        public event Action<int, long>? CountersChanged;
+        public event Action<int, long, long>? CountersChangedDetailed;
 
         public BackupUploaderService(AppConfig cfg, TokenService token)
         {
@@ -62,15 +67,16 @@ namespace leituraWPF.Services
             _sentDir = Path.Combine(_baseDir, "backup-enviados");
             _errorDir = Path.Combine(_baseDir, "backup-erros");
 
-            // Garantir que os diretórios existem
             EnsureDirectoriesExist();
 
-            // Configurar HttpClient com timeouts apropriados
-            _http = new HttpClient
+            _http = new HttpClient(new HttpClientHandler
+            {
+                MaxConnectionsPerServer = 10
+            })
             {
                 DefaultRequestVersion = HttpVersion.Version20,
-                DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher,
-                Timeout = TimeSpan.FromMinutes(30) // Timeout maior para uploads grandes
+                DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
+                Timeout = TimeSpan.FromMinutes(15)
             };
         }
 
@@ -84,8 +90,8 @@ namespace leituraWPF.Services
             }
             catch (Exception ex)
             {
-                // Não fazer throw aqui para não quebrar a inicialização
-                StatusChanged?.Invoke($"[BACKUP] Aviso: Erro ao criar diretórios - {ex.Message}");
+                StatusChanged?.Invoke($"[BACKUP] ERRO: Falha ao criar diretórios - {ex.Message}");
+                throw; // Falha crítica
             }
         }
 
@@ -93,95 +99,112 @@ namespace leituraWPF.Services
         {
             ThrowIfDisposed();
 
-            if (_timer != null) return;
+            if (_timer != null || _backgroundTask?.IsCompleted == false) return;
 
-            var interval = TimeSpan.FromSeconds(Math.Max(_cfg.BackupPollSeconds, 10)); // Mínimo 10 segundos
+            var interval = TimeSpan.FromSeconds(Math.Max(_cfg.BackupPollSeconds, 30)); // Mínimo 30s
             _timer = new PeriodicTimer(interval);
             _cancellationTokenSource = new CancellationTokenSource();
 
-            _ = Task.Run(async () =>
+            _backgroundTask = Task.Run(BackgroundWorkerAsync, _cancellationTokenSource.Token);
+        }
+
+        private async Task BackgroundWorkerAsync()
+        {
+            var ct = _cancellationTokenSource!.Token;
+
+            try
             {
-                try
+                StatusChanged?.Invoke("[BACKUP] Serviço iniciado");
+
+                // Primeira execução após 5 segundos
+                await Task.Delay(5000, ct);
+                await RunCycleAsync(ct);
+
+                while (await _timer!.WaitForNextTickAsync(ct))
                 {
-                    StatusChanged?.Invoke($"[BACKUP] Serviço iniciado com intervalo de {interval.TotalSeconds}s");
+                    if (ct.IsCancellationRequested) break;
 
-                    // Primeira execução imediata
-                    await RunCycleAsync(_cancellationTokenSource.Token);
-
-                    while (await _timer.WaitForNextTickAsync(_cancellationTokenSource.Token))
+                    try
                     {
+                        await RunCycleAsync(ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        StatusChanged?.Invoke($"[BACKUP] ERRO no ciclo: {ex.Message}");
+
+                        // Aguardar antes de tentar novamente em caso de erro
                         try
                         {
-                            await RunCycleAsync(_cancellationTokenSource.Token);
+                            await Task.Delay(TimeSpan.FromMinutes(1), ct);
                         }
                         catch (OperationCanceledException)
                         {
                             break;
                         }
-                        catch (Exception ex)
-                        {
-                            StatusChanged?.Invoke($"[BACKUP] falha no ciclo: {ex.Message}");
-                        }
                     }
                 }
-                catch (OperationCanceledException)
-                {
-                    StatusChanged?.Invoke("[BACKUP] Serviço cancelado");
-                }
-                catch (Exception ex)
-                {
-                    StatusChanged?.Invoke($"[BACKUP] Erro crítico: {ex.Message}");
-                }
-            }, _cancellationTokenSource.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal quando cancelado
+            }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke($"[BACKUP] ERRO crítico: {ex.Message}");
+            }
+            finally
+            {
+                StatusChanged?.Invoke("[BACKUP] Serviço finalizado");
+            }
         }
 
         public void Stop()
         {
-            StopAsync().GetAwaiter().GetResult();
+            StopAsync().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         public async Task StopAsync(TimeSpan timeout = default)
         {
-            if (_timer == null) return;
+            if (_timer == null && _backgroundTask?.IsCompleted != false) return;
 
             var timeoutToUse = timeout == default ? TimeSpan.FromSeconds(30) : timeout;
 
-            _timer.Dispose();
+            _timer?.Dispose();
             _timer = null;
 
-            if (_cancellationTokenSource != null)
+            _cancellationTokenSource?.Cancel();
+
+            if (_backgroundTask != null)
             {
-                _cancellationTokenSource.Cancel();
-
-                // Aguardar que o ciclo atual termine
-                var waitTask = Task.Run(async () =>
-                {
-                    while (IsRunning)
-                    {
-                        await Task.Delay(100);
-                    }
-                });
-
                 try
                 {
-                    await waitTask.WaitAsync(timeoutToUse);
+                    await _backgroundTask.WaitAsync(timeoutToUse);
                 }
-                catch
+                catch (TimeoutException)
                 {
-                    // Ignore erros de timeout
+                    // Ignorar timeout
                 }
-
-                _cancellationTokenSource.Dispose();
-                _cancellationTokenSource = null;
+                catch (OperationCanceledException)
+                {
+                    // Normal
+                }
             }
 
-            StatusChanged?.Invoke("[BACKUP] Serviço parado");
+            _cancellationTokenSource?.Dispose();
+            _cancellationTokenSource = null;
+            _backgroundTask = null;
         }
 
-        private async Task<bool> EnqueueFileAsync(string filePath)
+        public async Task EnqueueAsync(string filePath)
         {
+            ThrowIfDisposed();
+
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
-                return false;
+                return;
 
             try
             {
@@ -190,80 +213,107 @@ namespace leituraWPF.Services
                 var dst = Path.Combine(_pendingDir, folder, name);
                 var sentCandidate = Path.Combine(_sentDir, folder, name);
 
-                // Verificar se já foi processado
                 if (File.Exists(sentCandidate) || File.Exists(dst))
-                    return false;
+                    return;
 
                 Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
 
-                // Usar async para não bloquear
-                using var source = File.OpenRead(filePath);
-                using var dest = File.OpenWrite(dst);
-                await source.CopyToAsync(dest);
+                // Usar async copy com buffer menor para não bloquear
+                await CopyFileAsync(filePath, dst);
 
-                return true;
+                Interlocked.Increment(ref _pendingCount);
             }
             catch (Exception ex)
             {
-                StatusChanged?.Invoke($"[BACKUP] Erro ao enfileirar {filePath}: {ex.Message}");
-                return false;
+                StatusChanged?.Invoke($"[BACKUP] ERRO ao enfileirar {Path.GetFileName(filePath)}: {ex.Message}");
             }
         }
 
-        public async Task EnqueueAsync(string filePath)
+        private static async Task CopyFileAsync(string source, string destination)
         {
-            ThrowIfDisposed();
+            const int bufferSize = 64 * 1024; // 64KB buffer
 
-            await EnqueueFileAsync(filePath).ConfigureAwait(false);
-            await UpdateCountersAsync().ConfigureAwait(false);
+            using var sourceStream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, useAsync: true);
+            using var destStream = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, useAsync: true);
+
+            await sourceStream.CopyToAsync(destStream);
         }
 
         public async Task LoadPendingFromBaseDirsAsync()
         {
             ThrowIfDisposed();
 
+            var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
             var tasks = new List<Task>();
 
             foreach (var dir in RenamerService.EnumerarPastasBase())
             {
-                tasks.Add(Task.Run(async () =>
+                if (!Directory.Exists(dir)) continue;
+
+                tasks.Add(ProcessDirectoryAsync(dir, semaphore));
+            }
+
+            await Task.WhenAll(tasks);
+            await UpdateCountersAsync();
+        }
+
+        private async Task ProcessDirectoryAsync(string dir, SemaphoreSlim semaphore)
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories);
+
+                foreach (var file in files)
                 {
                     try
                     {
-                        foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
-                        {
-                            await EnqueueFileAsync(file).ConfigureAwait(false);
-                        }
+                        await EnqueueAsync(file);
                     }
-                    catch (Exception ex)
+                    catch
                     {
-                        StatusChanged?.Invoke($"[BACKUP] Erro ao carregar diretório {dir}: {ex.Message}");
+                        // Ignorar arquivos problemáticos individualmente
                     }
-                }));
+                }
             }
-
-            await Task.WhenAll(tasks).ConfigureAwait(false);
-            await UpdateCountersAsync().ConfigureAwait(false);
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke($"[BACKUP] ERRO ao carregar {Path.GetFileName(dir)}: {ex.Message}");
+            }
+            finally
+            {
+                semaphore.Release();
+            }
         }
 
-        // Método síncrono para compatibilidade com código existente
         public void LoadPendingFromBaseDirs()
         {
-            LoadPendingFromBaseDirsAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            try
+            {
+                LoadPendingFromBaseDirsAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke($"[BACKUP] ERRO ao carregar pendentes: {ex.Message}");
+            }
         }
 
         private async Task UpdateCountersAsync()
         {
             try
             {
-                PendingCount = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).Count();
-                ErrorCount = Directory.EnumerateFiles(_errorDir, "*", SearchOption.AllDirectories).Count();
-                CountersChanged?.Invoke(PendingCount, UploadedCountSession);
-                CountersChangedDetailed?.Invoke(PendingCount, UploadedCountSession, ErrorCount);
+                var pending = await Task.Run(() => Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).Count());
+                var errors = await Task.Run(() => Directory.EnumerateFiles(_errorDir, "*", SearchOption.AllDirectories).Count());
+
+                Interlocked.Exchange(ref _pendingCount, pending);
+                Interlocked.Exchange(ref _errorCount, errors);
+
+                CountersChanged?.Invoke(_pendingCount, _uploadedCountSession);
+                CountersChangedDetailed?.Invoke(_pendingCount, _uploadedCountSession, _errorCount);
             }
-            catch (Exception ex)
+            catch
             {
-                StatusChanged?.Invoke($"[BACKUP] Erro ao atualizar contadores: {ex.Message}");
+                // Ignorar erros de contagem
             }
         }
 
@@ -271,10 +321,8 @@ namespace leituraWPF.Services
 
         private async Task RunCycleAsync(CancellationToken ct = default)
         {
-            if (!await _mutex.WaitAsync(100, ct)) // Timeout curto para evitar bloqueio
-            {
-                return; // Já em execução
-            }
+            if (!await _mutex.WaitAsync(1000, ct))
+                return; // Timeout - já em execução
 
             IsRunning = true;
 
@@ -282,59 +330,48 @@ namespace leituraWPF.Services
             {
                 await UpdateCountersAsync();
 
-                StatusChanged?.Invoke($"[BACKUP] ciclo iniciado ({PendingCount} pendentes)");
-
-                if (PendingCount == 0)
-                {
-                    StatusChanged?.Invoke("[BACKUP] nenhum arquivo pendente");
+                if (_pendingCount == 0)
                     return;
-                }
 
                 string token;
                 try
                 {
-                    token = await _token.GetTokenAsync().ConfigureAwait(false);
+                    token = await _token.GetTokenAsync();
                 }
-                catch (Exception ex)
+                catch
                 {
-                    StatusChanged?.Invoke("[BACKUP] offline/sem token");
-                    return;
+                    return; // Sem token, tentar no próximo ciclo
                 }
 
                 ConfigureHttpHeaders(token);
 
                 var driveId = await ResolveDriveIdAsync(ct);
                 if (string.IsNullOrEmpty(driveId))
-                {
-                    StatusChanged?.Invoke("[BACKUP] driveId não resolvido");
                     return;
-                }
 
-                try
-                {
-                    await EnsureFolderAsync(driveId, _cfg.BackupFolder, ct);
-                }
-                catch (HttpRequestException ex)
-                {
-                    StatusChanged?.Invoke($"[BACKUP] rede indisponível: {ex.Message}");
-                    return;
-                }
-
+                await EnsureFolderAsync(driveId, _cfg.BackupFolder, ct);
                 await ProcessPendingFilesAsync(driveId, ct);
 
                 LastRunUtc = DateTime.UtcNow;
                 LastSuccessUtc = DateTime.UtcNow;
                 await UpdateCountersAsync();
 
-                StatusChanged?.Invoke($"[BACKUP] ciclo concluído: pendentes={PendingCount}, enviados(sessão)={UploadedCountSession}, erros={ErrorCount}");
+                if (_pendingCount > 0 || _errorCount > 0)
+                {
+                    StatusChanged?.Invoke($"[BACKUP] Pendentes: {_pendingCount}, Enviados: {_uploadedCountSession}, Erros: {_errorCount}");
+                }
             }
             catch (OperationCanceledException)
             {
                 throw;
             }
+            catch (HttpRequestException)
+            {
+                // Ignorar erros de rede - tentar no próximo ciclo
+            }
             catch (Exception ex)
             {
-                StatusChanged?.Invoke($"[BACKUP] ciclo falhou: {ex.Message}");
+                StatusChanged?.Invoke($"[BACKUP] ERRO: {ex.Message}");
             }
             finally
             {
@@ -346,34 +383,52 @@ namespace leituraWPF.Services
         private void ConfigureHttpHeaders(string token)
         {
             _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            _http.DefaultRequestHeaders.Accept.Clear();
-            _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            if (!_http.DefaultRequestHeaders.Accept.Any())
+            {
+                _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            }
         }
 
         private async Task ProcessPendingFilesAsync(string driveId, CancellationToken ct)
         {
-            var files = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories).ToList();
-            var semaphore = new SemaphoreSlim(3, 3); // Máximo 3 uploads paralelos
+            var files = Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories)
+                .Take(50) // Limitar a 50 arquivos por ciclo
+                .ToArray();
 
-            var tasks = files.Select(async file =>
+            if (files.Length == 0) return;
+
+            var semaphore = new SemaphoreSlim(2, 2); // Máximo 2 uploads paralelos
+            var tasks = new List<Task>();
+
+            foreach (var file in files)
             {
-                await semaphore.WaitAsync(ct);
-                try
-                {
-                    await ProcessSingleFileAsync(driveId, file, ct);
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
-            });
+                if (ct.IsCancellationRequested) break;
+
+                tasks.Add(ProcessFileWithSemaphoreAsync(semaphore, driveId, file, ct));
+            }
 
             await Task.WhenAll(tasks);
+        }
+
+        private async Task ProcessFileWithSemaphoreAsync(SemaphoreSlim semaphore, string driveId, string file, CancellationToken ct)
+        {
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                await ProcessSingleFileAsync(driveId, file, ct);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
         }
 
         private async Task ProcessSingleFileAsync(string driveId, string file, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
+
+            if (!File.Exists(file)) return;
 
             var name = Path.GetFileName(file);
             var size = new FileInfo(file).Length;
@@ -381,94 +436,59 @@ namespace leituraWPF.Services
             var sub = Path.GetDirectoryName(rel)?.Replace('\\', '/') ?? string.Empty;
             var remoteFolder = string.IsNullOrEmpty(sub) ? _cfg.BackupFolder : $"{_cfg.BackupFolder}/{sub}";
 
-            try
+            const int maxAttempts = 2;
+            Exception? lastException = null;
+
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                await EnsureFolderAsync(driveId, remoteFolder, ct);
-                var remote = $"/{remoteFolder}/{name}";
-
-                const int maxAttempts = 3;
-                Exception? lastException = null;
-
-                for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                try
                 {
-                    try
-                    {
-                        if (size <= 4 * 1024 * 1024)
-                            await UploadSmallAsync(driveId, remoteFolder, name, file, ct);
-                        else
-                            await UploadLargeAsync(driveId, remoteFolder, name, file, size, ct);
+                    await EnsureFolderAsync(driveId, remoteFolder, ct);
 
-                        // Sucesso - mover para enviados
-                        await MoveToSentAsync(file, rel);
+                    if (size <= 4 * 1024 * 1024)
+                        await UploadSmallAsync(driveId, remoteFolder, name, file, ct);
+                    else
+                        await UploadLargeAsync(driveId, remoteFolder, name, file, size, ct);
 
-                        UploadedCountSession++;
-                        PendingCount--;
+                    await MoveToSentAsync(file, rel);
 
-                        StatusChanged?.Invoke($"[BACKUP] Arquivo enviado: {name} ({size} bytes)");
-                        FileUploaded?.Invoke(file, remote, size);
-                        CountersChanged?.Invoke(PendingCount, UploadedCountSession);
-                        CountersChangedDetailed?.Invoke(PendingCount, UploadedCountSession, ErrorCount);
-                        return;
-                    }
-                    catch (HttpRequestException ex) when (IsNetworkError(ex))
-                    {
-                        lastException = ex;
-                        StatusChanged?.Invoke($"[BACKUP] rede indisponível em {name}, tentativa {attempt}");
+                    Interlocked.Increment(ref _uploadedCountSession);
+                    Interlocked.Decrement(ref _pendingCount);
 
-                        if (attempt < maxAttempts)
-                            await Task.Delay(TimeSpan.FromSeconds(5 * attempt), ct); // Backoff exponencial
-                    }
-                    catch (InvalidOperationException ex) when (ex.Message.Contains("409"))
-                    {
-                        lastException = ex;
-                        StatusChanged?.Invoke($"[BACKUP] conflito em {name}, tentativa {attempt}");
-
-                        if (attempt < maxAttempts)
-                            await Task.Delay(TimeSpan.FromSeconds(2 * attempt), ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        lastException = ex;
-                        break; // Erro não recuperável
-                    }
+                    FileUploaded?.Invoke(file, $"/{remoteFolder}/{name}", size);
+                    return;
                 }
-
-                // Se chegou até aqui, todas as tentativas falharam
-                await MoveToErrorAsync(file, rel, lastException);
-
-                ErrorCount++;
-                PendingCount--;
-
-                StatusChanged?.Invoke($"[BACKUP] Falha definitiva em {name} após {maxAttempts} tentativas");
-                FileUploadFailed?.Invoke(file, name, lastException ?? new Exception("Erro desconhecido"));
-                CountersChanged?.Invoke(PendingCount, UploadedCountSession);
-                CountersChangedDetailed?.Invoke(PendingCount, UploadedCountSession, ErrorCount);
+                catch (HttpRequestException ex) when (IsRetryableError(ex) && attempt < maxAttempts)
+                {
+                    lastException = ex;
+                    await Task.Delay(TimeSpan.FromSeconds(5 * attempt), ct);
+                }
+                catch (Exception ex)
+                {
+                    lastException = ex;
+                    break;
+                }
             }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                StatusChanged?.Invoke($"[BACKUP] Erro inesperado em {name}: {ex.Message}");
-                await MoveToErrorAsync(file, rel, ex);
-                ErrorCount++;
-                PendingCount--;
-                CountersChanged?.Invoke(PendingCount, UploadedCountSession);
-                CountersChangedDetailed?.Invoke(PendingCount, UploadedCountSession, ErrorCount);
-            }
+
+            // Falhou definitivamente
+            await MoveToErrorAsync(file, rel, lastException);
+
+            Interlocked.Increment(ref _errorCount);
+            Interlocked.Decrement(ref _pendingCount);
+
+            FileUploadFailed?.Invoke(file, name, lastException ?? new Exception("Falha desconhecida"));
         }
 
-        private static bool IsNetworkError(HttpRequestException ex)
+        private static bool IsRetryableError(HttpRequestException ex)
         {
-            return ex.Message.Contains("timeout") ||
-                   ex.Message.Contains("connection") ||
-                   ex.Message.Contains("network");
+            return ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+                   ex.Message.Contains("connection", StringComparison.OrdinalIgnoreCase) ||
+                   ex.Message.Contains("network", StringComparison.OrdinalIgnoreCase);
         }
 
-        private async Task MoveToSentAsync(string sourceFile, string relativePath)
+        private static async Task MoveToSentAsync(string sourceFile, string relativePath)
         {
-            var dst = Path.Combine(_sentDir, relativePath);
+            var dst = Path.Combine(Path.Combine(AppContext.BaseDirectory, "backup-enviados"), relativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
 
             if (File.Exists(dst))
@@ -477,25 +497,24 @@ namespace leituraWPF.Services
             File.Move(sourceFile, dst);
         }
 
-        private async Task MoveToErrorAsync(string sourceFile, string relativePath, Exception? exception)
+        private static async Task MoveToErrorAsync(string sourceFile, string relativePath, Exception? exception)
         {
-            var dst = Path.Combine(_errorDir, relativePath);
+            var dst = Path.Combine(Path.Combine(AppContext.BaseDirectory, "backup-erros"), relativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
 
-            // Criar arquivo de erro com detalhes
             var errorFile = dst + ".error";
             var errorInfo = new
             {
                 Timestamp = DateTime.UtcNow,
-                OriginalFile = sourceFile,
-                Exception = exception?.ToString() ?? "Erro desconhecido"
+                Exception = exception?.GetType().Name ?? "Unknown",
+                Message = exception?.Message ?? "Erro desconhecido"
             };
 
             try
             {
-                await File.WriteAllTextAsync(errorFile, JsonSerializer.Serialize(errorInfo, new JsonSerializerOptions { WriteIndented = true }));
+                await File.WriteAllTextAsync(errorFile, JsonSerializer.Serialize(errorInfo));
             }
-            catch { /* ignore */ }
+            catch { }
 
             if (File.Exists(dst))
                 File.Delete(dst);
@@ -510,35 +529,27 @@ namespace leituraWPF.Services
 
             try
             {
-                string url;
-                if (!string.IsNullOrEmpty(_cfg.BackupListId))
-                {
-                    url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.BackupSiteId}/lists/{_cfg.BackupListId}/drive";
-                }
-                else
-                {
-                    url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.BackupSiteId}/drive";
-                }
+                string url = !string.IsNullOrEmpty(_cfg.BackupListId)
+                    ? $"https://graph.microsoft.com/v1.0/sites/{_cfg.BackupSiteId}/lists/{_cfg.BackupListId}/drive"
+                    : $"https://graph.microsoft.com/v1.0/sites/{_cfg.BackupSiteId}/drive";
 
                 using var resp = await _http.GetAsync(url, ct);
                 if (!resp.IsSuccessStatusCode)
-                {
                     return null;
-                }
 
                 var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct));
                 return json?["id"]?.ToString();
             }
-            catch (Exception ex)
+            catch
             {
-                StatusChanged?.Invoke($"[BACKUP] Erro ao resolver DriveId: {ex.Message}");
                 return null;
             }
         }
 
         private async Task EnsureFolderAsync(string driveId, string folder, CancellationToken ct)
         {
-            if (string.IsNullOrWhiteSpace(folder) || _ensured.Contains(folder)) return;
+            if (string.IsNullOrWhiteSpace(folder) || _ensured.Contains(folder))
+                return;
 
             var segments = folder.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
             string current = string.Empty;
@@ -570,20 +581,15 @@ namespace leituraWPF.Services
                         using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
                         using var resp2 = await _http.PostAsync(createUrl, content, ct);
 
-                        // 409 = já existe, podemos ignorar
                         if (!resp2.IsSuccessStatusCode && resp2.StatusCode != HttpStatusCode.Conflict)
-                        {
-                            var errorBody = await resp2.Content.ReadAsStringAsync(ct);
-                            throw new InvalidOperationException($"Falha ao criar pasta {current}: {resp2.StatusCode} {errorBody}");
-                        }
+                            return; // Falha silenciosa - não travar o processo
                     }
 
                     _ensured.Add(current);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    StatusChanged?.Invoke($"[BACKUP] Erro ao garantir pasta {current}: {ex.Message}");
-                    throw;
+                    return; // Falha silenciosa
                 }
             }
         }
@@ -592,11 +598,14 @@ namespace leituraWPF.Services
         {
             var url = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root:/{Uri.EscapeDataString(folder)}/{Uri.EscapeDataString(name)}:/content?@microsoft.graph.conflictBehavior=replace";
 
-            using var fs = File.OpenRead(path);
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
             using var content = new StreamContent(fs);
             using var resp = await _http.PutAsync(url, content, ct);
 
-            await EnsureSuccessAsync(resp, $"PUT {name}");
+            if (!resp.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException($"Upload falhou: {resp.StatusCode}");
+            }
         }
 
         private async Task UploadLargeAsync(string driveId, string folder, string name, string path, long size, CancellationToken ct)
@@ -612,17 +621,19 @@ namespace leituraWPF.Services
 
             using var createContent = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
             using var resp = await _http.PostAsync(createUrl, createContent, ct);
-            await EnsureSuccessAsync(resp, "createUploadSession");
+
+            if (!resp.IsSuccessStatusCode)
+                throw new HttpRequestException($"Sessão falhou: {resp.StatusCode}");
 
             var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct));
             var uploadUrl = json?["uploadUrl"]?.ToString();
             if (string.IsNullOrEmpty(uploadUrl))
                 throw new InvalidOperationException("uploadUrl vazio");
 
-            const int chunkSize = 10 * 1024 * 1024; // 10MB chunks
+            const int chunkSize = 5 * 1024 * 1024; // 5MB chunks para melhor performance
             long sent = 0;
 
-            using var fs = File.OpenRead(path);
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, chunkSize, useAsync: true);
             var buffer = new byte[chunkSize];
 
             while (sent < size)
@@ -639,27 +650,10 @@ namespace leituraWPF.Services
                 using var resp2 = await _http.PutAsync(uploadUrl, part, ct);
                 if (!resp2.IsSuccessStatusCode && resp2.StatusCode != HttpStatusCode.Accepted)
                 {
-                    var errorBody = await resp2.Content.ReadAsStringAsync(ct);
-                    throw new InvalidOperationException($"Upload chunk falhou: {resp2.StatusCode} {errorBody}");
+                    throw new HttpRequestException($"Chunk falhou: {resp2.StatusCode}");
                 }
 
                 sent += read;
-
-                // Log de progresso para arquivos grandes
-                if (size > 50 * 1024 * 1024) // > 50MB
-                {
-                    var progress = (double)sent / size * 100;
-                    StatusChanged?.Invoke($"[BACKUP] Upload progress {name}: {progress:F1}%");
-                }
-            }
-        }
-
-        private static async Task EnsureSuccessAsync(HttpResponseMessage resp, string op)
-        {
-            if (!resp.IsSuccessStatusCode)
-            {
-                var body = await resp.Content.ReadAsStringAsync();
-                throw new InvalidOperationException($"{op} falhou: {(int)resp.StatusCode} {resp.ReasonPhrase} {body}");
             }
         }
 
@@ -672,22 +666,18 @@ namespace leituraWPF.Services
         public void Dispose()
         {
             if (_disposed) return;
+            _disposed = true;
 
             try
             {
-                StopAsync().GetAwaiter().GetResult();
+                StopAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
             }
-            catch (Exception ex)
-            {
-                StatusChanged?.Invoke($"[BACKUP] Erro ao parar serviço: {ex.Message}");
-            }
+            catch { }
 
             _timer?.Dispose();
             _http?.Dispose();
             _mutex?.Dispose();
             _cancellationTokenSource?.Dispose();
-
-            _disposed = true;
         }
     }
 }
