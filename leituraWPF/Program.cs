@@ -3,6 +3,7 @@ using leituraWPF.Utils;
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -182,21 +183,39 @@ namespace leituraWPF
         {
             try
             {
-                var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+                string? json = null;
+                var url = "https://github.com/loboczss/leituraWPF/releases/download/v1.0.0.0/appsettings.json";
 
-                if (!File.Exists(path))
+                try
                 {
-                    System.Windows.MessageBox.Show(
-                        "Arquivo de configuração não encontrado. Usando padrões.",
-                        "Aviso",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                    return;
+                    using var http = new HttpClient();
+                    var response = http.GetAsync(url).GetAwaiter().GetResult();
+                    if (response.IsSuccessStatusCode)
+                        json = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                }
+                catch
+                {
+                    // Ignorar e tentar arquivo local
                 }
 
-                var json = File.ReadAllText(path);
                 if (string.IsNullOrWhiteSpace(json))
-                    return;
+                {
+                    var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+
+                    if (!File.Exists(path))
+                    {
+                        System.Windows.MessageBox.Show(
+                            "Arquivo de configuração não encontrado. Usando padrões.",
+                            "Aviso",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                        return;
+                    }
+
+                    json = File.ReadAllText(path);
+                    if (string.IsNullOrWhiteSpace(json))
+                        return;
+                }
 
                 var options = new JsonSerializerOptions
                 {
