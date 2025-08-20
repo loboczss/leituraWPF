@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using leituraWPF.Services;
-using System.Text.RegularExpressions;
 using System.Windows.Data;
 
 namespace leituraWPF
@@ -336,7 +335,7 @@ namespace leituraWPF
                     var info = new FileInfo(filePath);
                     _historySent.Add(new BackupItem
                     {
-                        FileName = ExtractOsNumber(Path.GetFileName(filePath)),
+                        FileName = ExtractOsNumber(filePath),
                         CompletedAt = info.LastWriteTime,
                         FilePath = filePath
                     });
@@ -351,7 +350,7 @@ namespace leituraWPF
                     var info = new FileInfo(filePath);
                     _historyErrors.Add(new BackupItem
                     {
-                        FileName = ExtractOsNumber(Path.GetFileName(filePath)),
+                        FileName = ExtractOsNumber(filePath),
                         CompletedAt = info.LastWriteTime,
                         FilePath = filePath
                     });
@@ -478,11 +477,20 @@ namespace leituraWPF
             return item.FileName?.Contains(HistorySearchText, StringComparison.OrdinalIgnoreCase) == true;
         }
 
-        private static string ExtractOsNumber(string fileName)
+        private static string ExtractOsNumber(string filePath)
         {
-            if (string.IsNullOrWhiteSpace(fileName)) return fileName;
-            var match = Regex.Match(fileName, "\\d+");
-            return match.Success ? match.Value : fileName;
+            if (string.IsNullOrWhiteSpace(filePath)) return filePath;
+
+            var name = Path.GetFileNameWithoutExtension(filePath);
+            if (string.IsNullOrEmpty(name)) return filePath;
+
+            var parts = name.Split('_', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 2)
+            {
+                return $"{parts.First()}_{parts.Last()}";
+            }
+
+            return name;
         }
 
         private async Task CleanupAsync()
