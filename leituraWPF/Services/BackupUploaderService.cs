@@ -223,16 +223,15 @@ namespace leituraWPF.Services
 
             try
             {
-                var originalName = Path.GetFileName(filePath);
+                var name = Path.GetFileName(filePath);
                 var folder = Path.GetFileName(Path.GetDirectoryName(filePath)) ?? string.Empty;
-                var newName = BuildBackupFileName(folder, originalName);
-                var dst = Path.Combine(_pendingDir, newName);
-                var sentCandidate = Path.Combine(_sentDir, newName);
+                var dst = Path.Combine(_pendingDir, folder, name);
+                var sentCandidate = Path.Combine(_sentDir, folder, name);
 
                 if (File.Exists(sentCandidate) || File.Exists(dst))
                     return;
 
-                Directory.CreateDirectory(_pendingDir);
+                Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
 
                 // Usar async copy com buffer menor para não bloquear
                 await CopyFileAsync(filePath, dst);
@@ -243,25 +242,6 @@ namespace leituraWPF.Services
             {
                 StatusChanged?.Invoke($"[BACKUP] ERRO ao enfileirar {Path.GetFileName(filePath)}: {ex.Message}");
             }
-        }
-
-        private static string BuildBackupFileName(string folder, string fileName)
-        {
-            if (string.IsNullOrEmpty(folder) || string.IsNullOrEmpty(fileName))
-                return fileName;
-
-            var prefix = folder.Split('_').FirstOrDefault();
-            if (string.IsNullOrEmpty(prefix))
-                return fileName;
-
-            var nameNoExt = Path.GetFileNameWithoutExtension(fileName);
-            var ext = Path.GetExtension(fileName);
-            var idx = nameNoExt.LastIndexOf('_');
-            var suffix = idx >= 0 && idx < nameNoExt.Length - 1
-                ? nameNoExt[(idx + 1)..]
-                : nameNoExt;
-
-            return $"{prefix}_{suffix}{ext}";
         }
 
         private static async Task CopyFileAsync(string source, string destination)
@@ -465,11 +445,11 @@ namespace leituraWPF.Services
 
             if (!File.Exists(file)) return;
 
-            var rel = Path.GetRelativePath(_pendingDir, file);
-            var folder = Path.GetDirectoryName(rel) ?? string.Empty;
-            var name = BuildBackupFileName(folder, Path.GetFileName(file));
+            var name = Path.GetFileName(file);
             var size = new FileInfo(file).Length;
-            var remoteFolder = _cfg.BackupFolder;
+            var rel = Path.GetRelativePath(_pendingDir, file);
+            var sub = Path.GetDirectoryName(rel)?.Replace('\\', '/') ?? string.Empty;
+            var remoteFolder = string.IsNullOrEmpty(sub) ? _cfg.BackupFolder : $"{_cfg.BackupFolder}/{sub}";
 
             const int maxAttempts = 2;
             Exception? lastException = null;
