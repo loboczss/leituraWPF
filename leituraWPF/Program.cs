@@ -22,121 +22,361 @@ namespace leituraWPF
         [STAThread]
         public static void Main()
         {
+            // Single instance com timeout para evitar travamentos
             using var mutex = new Mutex(true, "leituraWPF_SINGLE_INSTANCE", out bool created);
             if (!created)
             {
-                try
-                {
-                    using var evt = EventWaitHandle.OpenExisting("leituraWPF_SHOW_EVENT");
-                    evt.Set();
-                }
-                catch (WaitHandleCannotBeOpenedException)
-                {
-                    var current = Process.GetCurrentProcess();
-                    var other = Process.GetProcessesByName(current.ProcessName)
-                                        .FirstOrDefault(p => p.Id != current.Id);
-                    if (other != null)
-                    {
-                        NativeMethods.ShowWindow(other.MainWindowHandle, NativeMethods.SW_RESTORE);
-                        NativeMethods.SetForegroundWindow(other.MainWindowHandle);
-                    }
-                }
+                HandleExistingInstance();
                 return;
             }
 
-            StartupService.ConfigureStartup();
-
-            // Carrega configuração
-            var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-            if (!File.Exists(path))
+            try
             {
+                RunApplication();
+            }
+            catch (Exception ex)
+            {
+                LogFatalError(ex);
+                System.Windows.MessageBox.Show("Erro crítico na inicialização. Verifique os logs.",
+                               "Erro", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private static void HandleExistingInstance()
+        {
+            try
+            {
+                // Timeout curto para não travar
+                using var evt = EventWaitHandle.OpenExisting("leituraWPF_SHOW_EVENT");
+                var signaled = evt.WaitOne(TimeSpan.FromSeconds(1));
+                if (signaled)
+                {
+                    evt.Set();
+                    return;
+                }
+            }
+            catch (WaitHandleCannotBeOpenedException)
+            {
+                // Fallback para método nativo
+            }
+            catch
+            {
+                // Ignorar outros erros de handle
+            }
+
+            // Fallback: tentar ativar janela existente via Win32
+            try
+            {
+                var current = Process.GetCurrentProcess();
+                var existing = Process.GetProcessesByName(current.ProcessName)
+                                     .Where(p => p.Id != current.Id)
+                                     .FirstOrDefault();
+
+                if (existing?.MainWindowHandle != IntPtr.Zero)
+                {
+                    NativeMethods.ShowWindow(existing.MainWindowHandle, NativeMethods.SW_RESTORE);
+                    NativeMethods.SetForegroundWindow(existing.MainWindowHandle);
+                }
+            }
+            catch
+            {
+                // Ignorar erros de Win32
+            }
+        }
+
+        private static void RunApplication()
+        {
+            // Configurar startup antes de tudo
+            try
+            {
+                StartupService.ConfigureStartup();
+            }
+            catch
+            {
+                // Não crítico - continuar sem startup automático
+            }
+
+            // Carregar configuração
+            LoadConfiguration();
+
+            // Inicializar serviços core
+            var tokenService = new TokenService(Config);
+            var funcService = new FuncionarioService(Config, tokenService);
+
+            BackupUploaderService? backup = null;
+            UpdatePoller? updatePoller = null;
+            TrayService? tray = null;
+            EventWaitHandle? showEvent = null;
+            CancellationTokenSource? appCts = null;
+
+            try
+            {
+                // Inicializar backup service
+                backup = new BackupUploaderService(Config, tokenService);
+
+                // Carregar pendentes em background
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await backup.LoadPendingFromBaseDirsAsync();
+                        backup.Start();
+                    }
+                    catch
+                    {
+                        // Falha silenciosa - backup não é crítico
+                    }
+                });
+
+                // Criar aplicação WPF
+                var app = new App();
+                app.InitializeComponent();
+                app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+                // Token para cancelamento global
+                appCts = new CancellationTokenSource();
+
+                // Mostrar login
+                var login = new LoginWindow(funcService, backup);
+
+                // Configurar poller antes do login
+                updatePoller = CreateUpdatePoller(login);
+
+                // Processo de login
+                var loginResult = login.ShowDialog();
+
+                if (loginResult != true || login.FuncionarioLogado == null)
+                {
+                    // Login cancelado - cleanup e exit
+                    return;
+                }
+
+                // Login bem-sucedido - inicializar janela principal
+                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
+
+                var main = new MainWindow(login.FuncionarioLogado, backup);
+                app.MainWindow = main;
+
+                // Configurar sistema de mostrar janela
+                showEvent = SetupShowWindowSystem(main, app);
+
+                // Configurar tray
+                tray = new TrayService(
+                    showWindow: () => ShowMainWindow(main, app),
+                    sync: () => SafeExecute(() => main.RunManualSync()),
+                    exit: () => SafeExecute(() => app.Dispatcher.BeginInvoke(() => main.ForceClose()))
+                );
+
+                // Mostrar janela e executar aplicação
+                main.Show();
+                app.Run();
+            }
+            finally
+            {
+                // Cleanup de recursos
+                SafeDispose(appCts);
+                SafeDispose(tray);
+                SafeDispose(updatePoller);
+                SafeDispose(backup);
+                SafeDispose(showEvent);
+            }
+        }
+
+        private static void LoadConfiguration()
+        {
+            try
+            {
+                var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+
+                if (!File.Exists(path))
+                {
+                    System.Windows.MessageBox.Show(
+                        "Arquivo de configuração não encontrado. Usando padrões.",
+                        "Aviso",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                var json = File.ReadAllText(path);
+                if (string.IsNullOrWhiteSpace(json))
+                    return;
+
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    AllowTrailingCommas = true,
+                    ReadCommentHandling = JsonCommentHandling.Skip
+                };
+
+                Config = JsonSerializer.Deserialize<AppConfig>(json, options) ?? new AppConfig();
+            }
+            catch (Exception ex)
+            {
+                LogError($"Erro ao carregar configuração: {ex.Message}");
                 System.Windows.MessageBox.Show(
-                    "Arquivo appsettings.json não encontrado. Usando configurações padrão.",
+                    "Erro na configuração. Usando padrões.",
                     "Aviso",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
-            else
-            {
-                var json = File.ReadAllText(path);
-                Config = JsonSerializer.Deserialize<AppConfig>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                }) ?? new AppConfig();
-            }
+        }
 
-            var tokenService = new TokenService(Config);
-            using var backup = new BackupUploaderService(Config, tokenService);
-            backup.LoadPendingFromBaseDirs();
-            backup.Start();
-
-            var funcService = new FuncionarioService(Config, tokenService);
-
-            using var backup = new BackupUploaderService(Config, tokenService);
-            _ = backup.LoadPendingFromBaseDirsAsync();
-            backup.Start();
-
-
-            var login = new LoginWindow(funcService, backup);
-
-            // Cria a Application ANTES do ShowDialog (dispatcher ativo para o poller abrir janelas)
-            var app = new App();
-            app.InitializeComponent();
-            app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-
-            // ⬇️ Poller ATIVO já durante a tela de login:
-            using var updatePoller = new UpdatePoller(
+        private static UpdatePoller CreateUpdatePoller(LoginWindow login)
+        {
+            return new UpdatePoller(
                 service: new AtualizadorService(),
-                ownerResolver: () =>
-                {
-                    // Preferir MainWindow quando visível; senão, usar a janela de login (se estiver visível)
-                    if (WpfApp.Current?.MainWindow != null && WpfApp.Current.MainWindow.IsVisible)
-                        return WpfApp.Current.MainWindow;
-
-                    return login != null && login.IsVisible ? (WpfWindow)login : null;
-                },
-                baseInterval: TimeSpan.FromMinutes(10),
-                maxInterval: TimeSpan.FromHours(1),
-                initialDelay: TimeSpan.FromSeconds(5) // dá tempo da tela de login aparecer
+                ownerResolver: () => GetCurrentVisibleWindow(login),
+                baseInterval: TimeSpan.FromMinutes(15), // Intervalo maior para reduzir carga
+                maxInterval: TimeSpan.FromHours(2),
+                initialDelay: TimeSpan.FromSeconds(30) // Delay maior para estabilizar
             );
+        }
 
-            if (login.ShowDialog() == true)
+        private static WpfWindow? GetCurrentVisibleWindow(LoginWindow login)
+        {
+            try
             {
-                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
+                // Preferir MainWindow se visível
+                if (WpfApp.Current?.MainWindow?.IsVisible == true)
+                    return WpfApp.Current.MainWindow;
 
-                var main = new MainWindow(login.FuncionarioLogado, backup);
+                // Fallback para login se visível
+                if (login?.IsVisible == true)
+                    return login;
 
-                void ShowMainWindow()
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static EventWaitHandle SetupShowWindowSystem(MainWindow main, App app)
+        {
+            try
+            {
+                var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "leituraWPF_SHOW_EVENT");
+
+                // Background task para monitorar evento
+                _ = Task.Run(async () =>
                 {
-                    app.Dispatcher.Invoke(() =>
+                    try
                     {
-                        if (main.WindowState == WindowState.Minimized) main.WindowState = WindowState.Normal;
-                        if (!main.IsVisible) main.Show();
-                        main.Activate();
-                    });
-                }
+                        while (true)
+                        {
+                            if (showEvent.WaitOne(TimeSpan.FromSeconds(30)))
+                            {
+                                ShowMainWindow(main, app);
+                            }
 
-                using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "leituraWPF_SHOW_EVENT");
-                _ = Task.Run(() =>
-                {
-                    while (showEvent.WaitOne())
+                            // Verificar se app ainda está ativo
+                            if (app.Dispatcher.HasShutdownStarted)
+                                break;
+                        }
+                    }
+                    catch
                     {
-                        ShowMainWindow();
+                        // Task vai terminar silenciosamente
                     }
                 });
 
-                using var tray = new TrayService(
-                    showWindow: ShowMainWindow,
-                    sync: () => main.RunManualSync(),
-                    exit: () => app.Dispatcher.Invoke(() => main.ForceClose()));
-
-                // Exibe a janela principal antes de iniciar o loop da aplicação
-                app.MainWindow = main;
-                main.Show();
-                app.Run();
-                // Ao sair do Run, 'using' garante Dispose do tray e do poller
+                return showEvent;
             }
-            // Se o login for cancelado, o poller é descartado automaticamente aqui pelo 'using'
+            catch
+            {
+                // Retornar handle dummy se falhar
+                return new EventWaitHandle(false, EventResetMode.AutoReset);
+            }
+        }
+
+        private static void ShowMainWindow(MainWindow main, App app)
+        {
+            try
+            {
+                if (app.Dispatcher.HasShutdownStarted)
+                    return;
+
+                app.Dispatcher.BeginInvoke(() =>
+                {
+                    try
+                    {
+                        if (main.WindowState == WindowState.Minimized)
+                            main.WindowState = WindowState.Normal;
+
+                        if (!main.IsVisible)
+                            main.Show();
+
+                        main.Activate();
+                        main.Focus();
+                    }
+                    catch
+                    {
+                        // Ignorar erros de UI
+                    }
+                });
+            }
+            catch
+            {
+                // Ignorar erros de dispatcher
+            }
+        }
+
+        private static void SafeExecute(Action action)
+        {
+            try
+            {
+                action?.Invoke();
+            }
+            catch
+            {
+                // Execução segura - ignorar erros
+            }
+        }
+
+        private static void SafeDispose(IDisposable? disposable)
+        {
+            try
+            {
+                disposable?.Dispose();
+            }
+            catch
+            {
+                // Dispose seguro - ignorar erros
+            }
+        }
+
+        private static void LogError(string message)
+        {
+            try
+            {
+                Debug.WriteLine($"[ERROR] {DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}");
+
+                // Log em arquivo se necessário
+                var logPath = Path.Combine(AppContext.BaseDirectory, "error.log");
+                File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}\n");
+            }
+            catch
+            {
+                // Ignorar erros de log
+            }
+        }
+
+        private static void LogFatalError(Exception ex)
+        {
+            try
+            {
+                var message = $"FATAL: {ex.Message}\n{ex.StackTrace}";
+                Debug.WriteLine($"[FATAL] {DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}");
+
+                var logPath = Path.Combine(AppContext.BaseDirectory, "fatal.log");
+                File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}\n");
+            }
+            catch
+            {
+                // Último recurso - não pode falhar
+            }
         }
     }
 }

@@ -47,7 +47,7 @@ namespace leituraWPF
 
 
         public MainWindow(Funcionario? funcionario = null, BackupUploaderService? backupService = null)
-r
+
         {
             InitializeComponent();
 
