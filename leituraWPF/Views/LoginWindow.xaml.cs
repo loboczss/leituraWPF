@@ -67,7 +67,7 @@ namespace leituraWPF
             _funcService = funcService ?? throw new ArgumentNullException(nameof(funcService));
             _backup = backup ?? throw new ArgumentNullException(nameof(backup));
             DataContext = this;
-
+            _cancellationTokenSource = new CancellationTokenSource();
 
             _backup.CountersChanged += (pend, sent) =>
             {
@@ -77,8 +77,8 @@ namespace leituraWPF
                     long percent = total > 0 ? (sent * 100 / total) : 0;
                     if (StatusBorder != null)
                         StatusBorder.Visibility = Visibility.Visible;
-                    if (TxtBackupStatus != null)
-                        TxtBackupStatus.Text = $"Backup: {sent}/{total} ({percent}%)";
+                    if (TxtBackupProgress != null)
+                        TxtBackupProgress.Text = $"Backup: {sent}/{total} ({percent}%)";
                 });
             };
 
@@ -87,7 +87,7 @@ namespace leituraWPF
                 long total = _backup.PendingCount + _backup.UploadedCountSession;
                 long percent = total > 0 ? (_backup.UploadedCountSession * 100 / total) : 0;
                 StatusBorder.Visibility = Visibility.Visible;
-                TxtBackupStatus.Text = $"Backup: {_backup.UploadedCountSession}/{total} ({percent}%)";
+                TxtBackupProgress.Text = $"Backup: {_backup.UploadedCountSession}/{total} ({percent}%)";
             });
 
         }
