@@ -1,35 +1,270 @@
 <Window x:Class="leituraWPF.ClientInfoWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Confirmar Cliente" Width="400" Height="500"
-        WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
-    <Grid Margin="20">
+        Title="Confirmar Cliente" Width="550" Height="650"
+        WindowStartupLocation="CenterOwner" 
+        ResizeMode="NoResize"
+        Background="#F8F9FA"
+        FontFamily="Segoe UI">
+
+    <Window.Resources>
+        <!-- Estilo para o cabeçalho -->
+        <Style x:Key="HeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#2C3E50"/>
+            <Setter Property="Margin" Value="0,0,0,20"/>
+        </Style>
+
+        <!-- Estilo para labels -->
+        <Style x:Key="LabelStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Foreground" Value="#495057"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <!-- Estilo para valores -->
+        <Style x:Key="ValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#212529"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,0,0"/>
+        </Style>
+
+        <!-- Estilo para botões -->
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#007BFF"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="20,8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                CornerRadius="6" 
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#0056B3"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#004085"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#6C757D"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="20,8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                CornerRadius="6" 
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#545B62"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#3A4045"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Estilo para o card principal -->
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="24"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#E9ECEF" 
+                                    BlurRadius="10" 
+                                    ShadowDepth="2" 
+                                    Opacity="0.3"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Estilo para separador -->
+        <Style x:Key="SeparatorStyle" TargetType="Rectangle">
+            <Setter Property="Fill" Value="#E9ECEF"/>
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Margin" Value="0,16,0,16"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="30">
         <Grid.RowDefinitions>
-            <RowDefinition/>
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-                <TextBlock Text="Confirme os dados do cliente" FontSize="16" FontWeight="Bold" Margin="0,0,0,12"/>
-                <UniformGrid Columns="2" HorizontalAlignment="Left">
-                    <TextBlock Text="Nome:" FontWeight="Bold"/> <TextBlock Text="{Binding NomeCliente}"/>
-                    <TextBlock Text="Num OS:" FontWeight="Bold"/> <TextBlock Text="{Binding NumOS}"/>
-                    <TextBlock Text="Num Ocorrência:" FontWeight="Bold"/> <TextBlock Text="{Binding NumOcorrencia}"/>
-                    <TextBlock Text="Rota:" FontWeight="Bold"/> <TextBlock Text="{Binding Rota}"/>
-                    <TextBlock Text="Obra:" FontWeight="Bold"/> <TextBlock Text="{Binding Obra}"/>
-                    <TextBlock Text="ID Sigfi:" FontWeight="Bold"/> <TextBlock Text="{Binding IdSigfi}"/>
-                    <TextBlock Text="UC:" FontWeight="Bold"/> <TextBlock Text="{Binding UC}"/>
-                    <TextBlock Text="Empresa:" FontWeight="Bold"/> <TextBlock Text="{Binding Empresa}"/>
-                    <TextBlock Text="Tipo:" FontWeight="Bold"/> <TextBlock Text="{Binding Tipo}"/>
-                    <TextBlock Text="Tipo Desigfi:" FontWeight="Bold"/> <TextBlock Text="{Binding TipoDesigfi}"/>
-                    <TextBlock Text="UF:" FontWeight="Bold"/> <TextBlock Text="{Binding UF}"/>
-                    <TextBlock Text="Arquivo Base:" FontWeight="Bold"/> <TextBlock Text="{Binding NomeArquivoBase}"/>
-                </UniformGrid>
-            </StackPanel>
-        </ScrollViewer>
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="Confirmar" Width="100" Margin="0,0,8,0" IsDefault="True" Click="Confirm_Click"/>
-            <Button Content="Cancelar" Width="100" IsCancel="True" Click="Cancel_Click"/>
+
+        <!-- Card principal -->
+        <Border Grid.Row="0" Style="{StaticResource CardStyle}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" 
+                         HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <!-- Cabeçalho com ícone -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                        <Ellipse Width="40" Height="40" 
+                                Fill="#E3F2FD" 
+                                Margin="0,0,12,0">
+                        </Ellipse>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Confirmar Dados do Cliente" 
+                                     Style="{StaticResource HeaderStyle}"
+                                     Margin="0"/>
+                            <TextBlock Text="Verifique as informações antes de confirmar" 
+                                     FontSize="12" 
+                                     Foreground="#6C757D"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Seção de informações principais -->
+                    <TextBlock Text="Informações do Cliente" 
+                             FontWeight="SemiBold" 
+                             FontSize="14" 
+                             Foreground="#495057" 
+                             Margin="0,0,0,12"/>
+
+                    <Grid Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="32"/>
+                            <RowDefinition Height="32"/>
+                            <RowDefinition Height="32"/>
+                            <RowDefinition Height="32"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Nome:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding NomeCliente}" Style="{StaticResource ValueStyle}"/>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="UC:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding UC}" Style="{StaticResource ValueStyle}"/>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Empresa:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Empresa}" Style="{StaticResource ValueStyle}"/>
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="UF:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding UF}" Style="{StaticResource ValueStyle}"/>
+                    </Grid>
+
+                    <Rectangle Style="{StaticResource SeparatorStyle}"/>
+
+                    <!-- Seção de informações técnicas -->
+                    <TextBlock Text="Informações Técnicas" 
+                             FontWeight="SemiBold" 
+                             FontSize="14" 
+                             Foreground="#495057" 
+                             Margin="0,0,0,12"/>
+
+                    <Grid Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="32"/>
+                            <RowDefinition Height="32"/>
+                            <RowDefinition Height="32"/>
+                            <RowDefinition Height="32"/>
+                            <RowDefinition Height="32"/>
+                            <RowDefinition Height="32"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Num OS:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding NumOS}" Style="{StaticResource ValueStyle}"/>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Num Ocorrência:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding NumOcorrencia}" Style="{StaticResource ValueStyle}"/>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Rota:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Rota}" Style="{StaticResource ValueStyle}"/>
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Obra:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Obra}" Style="{StaticResource ValueStyle}"/>
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="ID Sigfi:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding IdSigfi}" Style="{StaticResource ValueStyle}"/>
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Tipo Desigfi:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding TipoDesigfi}" Style="{StaticResource ValueStyle}"/>
+                    </Grid>
+
+                    <Rectangle Style="{StaticResource SeparatorStyle}"/>
+
+                    <!-- Seção de arquivo -->
+                    <TextBlock Text="Informações do Sistema" 
+                             FontWeight="SemiBold" 
+                             FontSize="14" 
+                             Foreground="#495057" 
+                             Margin="0,0,0,12"/>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="32"/>
+                            <RowDefinition Height="32"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Tipo:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Tipo}" Style="{StaticResource ValueStyle}"/>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Arquivo Base:" Style="{StaticResource LabelStyle}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding NomeArquivoBase}" Style="{StaticResource ValueStyle}"/>
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Botões de ação -->
+        <StackPanel Grid.Row="1" 
+                   Orientation="Horizontal" 
+                   HorizontalAlignment="Right" 
+                   Margin="0,20,0,0">
+            <Button Content="✓ Confirmar" 
+                   Width="120"
+                   Style="{StaticResource PrimaryButtonStyle}"
+                   Margin="0,0,12,0" 
+                   IsDefault="True" 
+                   Click="Confirm_Click"/>
+            <Button Content="✕ Cancelar" 
+                   Width="120"
+                   Style="{StaticResource SecondaryButtonStyle}"
+                   IsCancel="True" 
+                   Click="Cancel_Click"/>
         </StackPanel>
     </Grid>
 </Window>
