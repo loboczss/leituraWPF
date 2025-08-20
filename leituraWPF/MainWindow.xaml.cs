@@ -141,6 +141,8 @@ namespace leituraWPF
             {
                 e.Cancel = true;
                 Hide();
+                // garante que o serviço de backup continue ativo mesmo escondido
+                _backup.Start();
                 return;
             }
             base.OnClosing(e);
@@ -158,6 +160,16 @@ namespace leituraWPF
             }
             catch { /* noop */ }
             base.OnClosed(e);
+        }
+
+        protected override void OnStateChanged(EventArgs e)
+        {
+            base.OnStateChanged(e);
+            if (WindowState == WindowState.Minimized)
+            {
+                // assegura continuidade do upload em segundo plano
+                _backup.Start();
+            }
         }
 
         public void ForceClose()
