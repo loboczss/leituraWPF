@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using leituraWPF.Services;
-using System.Text.RegularExpressions;
 using System.Windows.Data;
 
 namespace leituraWPF
@@ -203,7 +202,7 @@ namespace leituraWPF
 
         private async void OnFileUploaded(string localPath, string remotePath, long size)
         {
-            var fileName = Path.GetFileName(localPath);
+            var fileName = GetDisplayName(localPath);
 
             try
             {
@@ -242,7 +241,7 @@ namespace leituraWPF
 
         private async void OnFileUploadFailed(string localPath, string errorMessage, Exception ex)
         {
-            var fileName = Path.GetFileName(localPath);
+            var fileName = GetDisplayName(localPath);
 
             try
             {
@@ -306,7 +305,7 @@ namespace leituraWPF
                 var pendingFiles = _backup.GetPendingFiles();
                 foreach (var filePath in pendingFiles)
                 {
-                    var fileName = Path.GetFileName(filePath);
+                    var fileName = GetDisplayName(filePath);
                     var fileInfo = new FileInfo(filePath);
 
                     _pending.Add(new BackupItem
@@ -336,7 +335,7 @@ namespace leituraWPF
                     var info = new FileInfo(filePath);
                     _historySent.Add(new BackupItem
                     {
-                        FileName = ExtractOsNumber(Path.GetFileName(filePath)),
+                        FileName = GetDisplayName(filePath),
                         CompletedAt = info.LastWriteTime,
                         FilePath = filePath
                     });
@@ -351,7 +350,7 @@ namespace leituraWPF
                     var info = new FileInfo(filePath);
                     _historyErrors.Add(new BackupItem
                     {
-                        FileName = ExtractOsNumber(Path.GetFileName(filePath)),
+                        FileName = GetDisplayName(filePath),
                         CompletedAt = info.LastWriteTime,
                         FilePath = filePath
                     });
@@ -478,11 +477,18 @@ namespace leituraWPF
             return item.FileName?.Contains(HistorySearchText, StringComparison.OrdinalIgnoreCase) == true;
         }
 
-        private static string ExtractOsNumber(string fileName)
+        private static string GetDisplayName(string filePath)
         {
-            if (string.IsNullOrWhiteSpace(fileName)) return fileName;
-            var match = Regex.Match(fileName, "\\d+");
-            return match.Success ? match.Value : fileName;
+            if (string.IsNullOrWhiteSpace(filePath)) return filePath;
+
+            var directory = Path.GetDirectoryName(filePath);
+            var folderName = string.IsNullOrEmpty(directory) ? string.Empty : new DirectoryInfo(directory).Name;
+            var prefix = folderName.Split('_').FirstOrDefault() ?? folderName;
+
+            var fileName = Path.GetFileNameWithoutExtension(filePath);
+            var suffix = fileName.Split('_').LastOrDefault() ?? fileName;
+
+            return string.IsNullOrEmpty(prefix) ? suffix : $"{prefix}_{suffix}";
         }
 
         private async Task CleanupAsync()
