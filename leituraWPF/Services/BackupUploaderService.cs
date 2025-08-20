@@ -50,6 +50,21 @@ namespace leituraWPF.Services
         public DateTime? LastSuccessUtc { get; private set; }
         public bool IsRunning { get; private set; }
 
+        public IEnumerable<string> GetPendingFiles() =>
+            Directory.Exists(_pendingDir)
+                ? Directory.EnumerateFiles(_pendingDir, "*", SearchOption.AllDirectories)
+                : Enumerable.Empty<string>();
+
+        public IEnumerable<string> GetSentFiles() =>
+            Directory.Exists(_sentDir)
+                ? Directory.EnumerateFiles(_sentDir, "*", SearchOption.AllDirectories)
+                : Enumerable.Empty<string>();
+
+        public IEnumerable<string> GetErrorFiles() =>
+            Directory.Exists(_errorDir)
+                ? Directory.EnumerateFiles(_errorDir, "*", SearchOption.AllDirectories)
+                : Enumerable.Empty<string>();
+
         // Eventos
         public event Action<string>? StatusChanged;
         public event Action<string, string, long>? FileUploaded;
