@@ -92,9 +92,11 @@ namespace leituraWPF
 
             if (login.ShowDialog() == true)
             {
-                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
                 var main = new MainWindow(login.FuncionarioLogado);
+
+                app.MainWindow = main;
+                app.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
                 void ShowMainWindow()
                 {
