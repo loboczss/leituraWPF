@@ -29,6 +29,7 @@ namespace leituraWPF
         private readonly RenamerService _renamer = new RenamerService();
         private readonly InstallationRenamerService _installRenamer = new InstallationRenamerService();
         private readonly BackupUploaderService _backup;
+        private readonly ListaService _listaService;
 
         private readonly AtualizadorService _atualizador = new AtualizadorService();
         private bool _checkedUpdateAtStartup = false;
@@ -76,6 +77,7 @@ namespace leituraWPF
             _jsonReader = new JsonReaderService(this);
 
             _backup = backupService ?? new BackupUploaderService(Program.Config, _tokenService);
+            _listaService = new ListaService(Program.Config, _tokenService);
 
 
             _renamer.FileReadyForBackup += async p => await _backup.EnqueueAsync(p);
@@ -87,7 +89,7 @@ namespace leituraWPF
                 if (up.Contains("FALHA") || up.Contains("ERRO") || up.Contains("INDISPONÍVEL"))
                     Log(msg, true);
             };
-            _backup.FileUploaded += (local, remote, bytes) =>
+            _backup.FileUploaded += async (local, remote, bytes) =>
             {
                 Log($"[UPL] {Path.GetFileName(local)} → {remote} ({bytes:n0} bytes)");
                 var stats = SyncStatsService.Load();
@@ -97,6 +99,23 @@ namespace leituraWPF
                 {
                     TxtSyncStatus.Text = $"Enviado: {Path.GetFileName(local)}";
                 });
+
+                try
+                {
+                    if (_funcionario != null)
+                    {
+                        var os = ExtractOs(local);
+                        if (!string.IsNullOrWhiteSpace(os))
+                        {
+                            var line = $"{os} - {_funcionario.Nome.ToUpperInvariant()} - {_funcionario.Matricula} - {DateTime.Now:dd/MM/yyyy HH:mm}";
+                            await _listaService.AppendAsync(line);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"[LISTA] ERRO ao atualizar lista.txt: {ex.Message}", true);
+                }
             };
             _backup.CountersChanged += (pend, sent) =>
             {
@@ -329,6 +348,21 @@ namespace leituraWPF
             else
             {
                 Dispatcher.Invoke(ClearLog);
+            }
+        }
+
+        private static string ExtractOs(string path)
+        {
+            try
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+                if (string.IsNullOrEmpty(name)) return string.Empty;
+                var parts = name.Split('_', StringSplitOptions.RemoveEmptyEntries);
+                return parts.Length >= 3 ? parts[^3] : string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
