@@ -368,9 +368,9 @@ namespace leituraWPF
 
         private string GetSelectedUf()
         {
-            var content = (cboUf?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "AC";
-            content = content.ToUpperInvariant();
-            return (content == "AC" || content == "MT") ? content : "AC";
+            var tag = (cboUf?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "AC";
+            tag = tag.ToUpperInvariant();
+            return (tag == "AC" || tag == "MT") ? tag : "AC";
         }
 
         private string BuildFullNumos()
