@@ -545,8 +545,8 @@
                                 <TextBlock Text="Estado (UF)" Style="{StaticResource FieldLabel}"/>
                                 <ComboBox x:Name="cboUf" Style="{StaticResource RoundedComboBox}"
                                           Height="42" SelectedIndex="0" VerticalContentAlignment="Center">
-                                    <ComboBoxItem Content="AC - Acre"/>
-                                    <ComboBoxItem Content="MT - Mato Grosso"/>
+                                    <ComboBoxItem Content="AC - Acre" Tag="AC"/>
+                                    <ComboBoxItem Content="MT - Mato Grosso" Tag="MT"/>
                                 </ComboBox>
                             </StackPanel>
 
