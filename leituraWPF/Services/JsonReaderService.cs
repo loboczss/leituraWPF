@@ -61,8 +61,13 @@ namespace leituraWPF.Services
 
             foreach (JObject obj in array.OfType<JObject>())
             {
-                string numos = obj.Value<string>("NUMOS") ?? string.Empty;
-                string uf = obj.Value<string>("UF") ?? (numos.Length >= 2 ? numos[..2].ToUpperInvariant() : string.Empty);
+                string numosRaw = obj.Value<string>("NUMOS") ?? string.Empty;
+                string uf = obj.Value<string>("UF") ?? (numosRaw.Length >= 2 ? numosRaw[..2].ToUpperInvariant() : string.Empty);
+
+                // Normaliza o NUMOS garantindo o prefixo da UF
+                string numos = new string(numosRaw.Where(char.IsLetterOrDigit).ToArray());
+                if (!string.IsNullOrEmpty(uf) && !numos.StartsWith(uf, StringComparison.OrdinalIgnoreCase))
+                    numos = uf + numos;
 
                 list.Add(new ClientRecord
                 {
