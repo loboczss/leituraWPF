@@ -125,7 +125,23 @@ namespace leituraWPF.Services
                     UseShellExecute = true
                     // Se necessário elevar permissões: Verb = "runas"
                 };
-                Process.Start(psi);
+                try
+                {
+                    var proc = Process.Start(psi);
+                    if (proc == null)
+                        throw new InvalidOperationException("Falha ao iniciar processo de atualização.");
+                }
+                catch (Exception ex)
+                {
+                    await dispatcher.InvokeAsync(() =>
+                        System.Windows.MessageBox.Show(
+                            $"Erro ao iniciar atualização: {ex.Message}",
+                            "Atualização",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Error));
+                    offlineFailure = true;
+                    return;
+                }
 
                 // 5) Fecha o app
                 await dispatcher.InvokeAsync(() => WpfApp.Current.Shutdown());

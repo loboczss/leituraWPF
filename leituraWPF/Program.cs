@@ -96,6 +96,25 @@ namespace leituraWPF
             // Carregar configuração
             LoadConfiguration();
 
+            // Exibir mensagem de sucesso caso tenha ocorrido atualização
+            try
+            {
+                var flag = AtualizadorService.UpdateSuccessMarkerPath;
+                if (File.Exists(flag))
+                {
+                    File.Delete(flag);
+                    MessageBox.Show(
+                        "Aplicativo atualizado com sucesso!",
+                        "Atualização",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+            }
+            catch
+            {
+                // Ignorar problemas ao verificar marcador de atualização
+            }
+
             // Inicializar serviços core
             var tokenService = new TokenService(Config);
             var funcService = new FuncionarioService(Config, tokenService);

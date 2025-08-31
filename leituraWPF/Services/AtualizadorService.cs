@@ -27,6 +27,10 @@ namespace leituraWPF.Services
 
         private static string InstallDir => AppDomain.CurrentDomain.BaseDirectory;
 
+        // Arquivo marcador utilizado para indicar atualização concluída com sucesso.
+        public const string UpdateSuccessMarkerFile = "update_success.flag";
+        public static string UpdateSuccessMarkerPath => Path.Combine(InstallDir, UpdateSuccessMarkerFile);
+
         /// <summary>
         /// Retorna (versão local, versão remota).
         /// Mantido por compatibilidade.
@@ -193,6 +197,7 @@ namespace leituraWPF.Services
             string batchName = $"{AppProductName}_Update.bat";
             string batchPath = Path.Combine(Path.GetTempPath(), batchName);
             string installDir = InstallDir.TrimEnd('\n', '\r', '\\');
+            string flagPath = UpdateSuccessMarkerPath;
 
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
@@ -202,6 +207,7 @@ namespace leituraWPF.Services
             sb.AppendLine($"set INSTALL=\"{installDir}\"");
             sb.AppendLine($"set TEMP_DIR=%TEMP%\\{AppProductName}_Update");
             sb.AppendLine($"set BACKUP_DIR=%TEMP%\\{AppProductName}_Backup");
+            sb.AppendLine($"set SUCCESS_FLAG=\"{flagPath}\"");
             sb.AppendLine();
             sb.AppendLine("echo [INFO] Preparando atualizacao...");
             sb.AppendLine("if exist \"%TEMP_DIR%\" rmdir /s /q \"%TEMP_DIR%\" >nul 2>nul");
@@ -249,6 +255,7 @@ namespace leituraWPF.Services
             sb.AppendLine("rmdir /s /q \"%TEMP_DIR%\" >nul 2>nul");
             sb.AppendLine("rmdir /s /q \"%BACKUP_DIR%\" >nul 2>nul");
             sb.AppendLine();
+            sb.AppendLine("echo atualizado com sucesso> %SUCCESS_FLAG%");
             sb.AppendLine("echo [INFO] Iniciando aplicativo atualizado...");
             sb.AppendLine($"start \"\" \"%INSTALL%\\{AppExeName}\"");
             sb.AppendLine("endlocal");
