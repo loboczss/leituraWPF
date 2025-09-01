@@ -74,17 +74,17 @@ namespace leituraWPF.Services
             bool offlineFailure = false;
             try
             {
-                // 1) Consultar versões + status de rede
-                var (localVer, remoteVer, remoteOk) = await _service.GetVersionsWithStatusAsync().ConfigureAwait(false);
+                // 1) Consultar atualizações
+                var check = await _service.CheckForUpdatesAsync().ConfigureAwait(false);
 
-                if (!remoteOk)
+                if (!check.RemoteFetchSuccessful)
                 {
                     offlineFailure = true; // offline/erro de consulta
                     return;
                 }
 
                 // 2) Sem atualização? agenda próximo ciclo base
-                if (remoteVer == null || remoteVer <= localVer)
+                if (!check.UpdateAvailable || check.RemoteVersion == null || check.LocalVersion == null)
                 {
                     return;
                 }
@@ -104,7 +104,7 @@ namespace leituraWPF.Services
                     }
                     catch { /* ignore */ }
 
-                    var win = new UpdatePromptWindow(localVer, remoteVer, timeoutSeconds: 60);
+                    var win = new UpdatePromptWindow(check.LocalVersion!, check.RemoteVersion!, timeoutSeconds: 60);
                     if (owner != null) win.Owner = owner;
 
                     bool? dlg = win.ShowDialog();
@@ -113,33 +113,11 @@ namespace leituraWPF.Services
 
                 if (!wantsUpdate) return;
 
-                // 4) Baixa asset e roda update
-                string zipPath = await _service.DownloadLatestReleaseAsync(preferNameContains: null).ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(zipPath)) return;
-
-                string batPath = _service.CreateUpdateBatch(zipPath);
-
-                var psi = new ProcessStartInfo
+                // 4) Executa atualização
+                var update = await _service.PerformUpdateAsync().ConfigureAwait(false);
+                if (!update.Success)
                 {
-                    FileName = batPath,
-                    UseShellExecute = true
-                    // Se necessário elevar permissões: Verb = "runas"
-                };
-                try
-                {
-                    var proc = Process.Start(psi);
-                    if (proc == null)
-                        throw new InvalidOperationException("Falha ao iniciar processo de atualização.");
-                }
-                catch (Exception ex)
-                {
-                    await dispatcher.InvokeAsync(() =>
-                        System.Windows.MessageBox.Show(
-                            $"Erro ao iniciar atualização: {ex.Message}",
-                            "Atualização",
-                            System.Windows.MessageBoxButton.OK,
-                            System.Windows.MessageBoxImage.Error));
-                    offlineFailure = true;
+                    offlineFailure = !update.RemoteFetchSuccessful;
                     return;
                 }
 

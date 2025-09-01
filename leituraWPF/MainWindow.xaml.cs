@@ -288,10 +288,11 @@ namespace leituraWPF
         {
             try
             {
-                var (localV, remoteV) = await _atualizador.GetVersionsAsync();
-                if (remoteV <= localV) return; // já está atualizado
+                var check = await _atualizador.CheckForUpdatesAsync();
+                if (!check.UpdateAvailable || check.LocalVersion == null || check.RemoteVersion == null)
+                    return; // já está atualizado ou offline
 
-                var prompt = new UpdatePromptWindow(localV, remoteV, timeoutSeconds: 60)
+                var prompt = new UpdatePromptWindow(check.LocalVersion, check.RemoteVersion, timeoutSeconds: 60)
                 {
                     Owner = this
                 };
@@ -299,22 +300,12 @@ namespace leituraWPF
 
                 if (result != false)
                 {
-                    var zip = await _atualizador.DownloadLatestReleaseAsync(preferNameContains: null);
-                    if (zip == null)
+                    var update = await _atualizador.PerformUpdateAsync();
+                    if (!update.Success)
                     {
-                        Log("[WARN] Release encontrado, mas sem asset .zip para baixar.");
+                        Log($"[WARN] Falha ao iniciar atualização: {update.Message}");
                         return;
                     }
-
-                    var bat = _atualizador.CreateUpdateBatch(zip);
-
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "cmd.exe",
-                        Arguments = $"/C start \"\" \"{bat}\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    });
 
                     System.Windows.Application.Current.Shutdown();
                 }
