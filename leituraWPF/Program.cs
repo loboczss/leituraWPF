@@ -103,7 +103,7 @@ namespace leituraWPF
                 if (File.Exists(flag))
                 {
                     File.Delete(flag);
-                    MessageBox.Show(
+                    System.Windows.MessageBox.Show(
                         "Aplicativo atualizado com sucesso!",
                         "Atualização",
                         MessageBoxButton.OK,
