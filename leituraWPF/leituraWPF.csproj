@@ -11,7 +11,6 @@
 
 		<!-- Escolhe Program.Main como ponto de entrada -->
 		<StartupObject>leituraWPF.Program</StartupObject>
-		<ApplicationIcon>bin\Debug\net8.0-windows\ico-app.ico</ApplicationIcon>
 		
 	</PropertyGroup>
 	<ItemGroup>
