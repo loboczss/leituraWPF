@@ -26,6 +26,19 @@ namespace leituraWPF.Services
         private const int MaxRetryAttempts = 3;
         private const int TimeoutSeconds = 60;
 
+        private static readonly string[] PreserveDirs =
+        {
+            "backup-enviados",
+            "backup-erros",
+            "backup-pendentes",
+            "downloads"
+        };
+
+        private static readonly string[] PreserveFiles =
+        {
+            "syncstats.json"
+        };
+
         private static string InstallDir => AppDomain.CurrentDomain.BaseDirectory;
         public const string UpdateSuccessMarkerFile = "update_success.flag";
         public const string UpdateErrorMarkerFile = "update_error.flag";
@@ -579,7 +592,9 @@ namespace leituraWPF.Services
 
             // Cópia com robocopy
             sb.AppendLine("call :log \"[INFO] Instalando atualização\"");
-            sb.AppendLine("robocopy \"%TEMP_DIR%\" \"%INSTALL%\" /E /R:3 /W:5 >nul 2>nul");
+            var excludeDirs = string.Join(" ", PreserveDirs.Select(d => $"\\\"{d}\\\""));
+            var excludeFiles = string.Join(" ", PreserveFiles.Select(f => $"\\\"{f}\\\""));
+            sb.AppendLine($"robocopy \"%TEMP_DIR%\" \"%INSTALL%\" /E /R:3 /W:5 /XD {excludeDirs} /XF {excludeFiles} >nul 2>nul");
             sb.AppendLine("if %ERRORLEVEL% GEQ 8 call :error \"Falha na instalação dos arquivos\"");
             sb.AppendLine();
 
