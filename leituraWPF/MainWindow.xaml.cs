@@ -382,9 +382,13 @@ namespace leituraWPF
             {
                 try
                 {
+                    var uf = GetSelectedUf();
+                    var prefix = $"Manutencao_{uf}";
+
                     var files = Directory.EnumerateFiles(_downloadsDir, "*.json")
                         .Where(f => !Path.GetFileName(f).StartsWith("Instalacao_", StringComparison.OrdinalIgnoreCase))
                         .Where(f => !Path.GetFileName(f).Equals(".index.json", StringComparison.OrdinalIgnoreCase))
+                        .Where(f => Path.GetFileName(f).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                         .ToList();
 
                     var all = new List<ClientRecord>();
