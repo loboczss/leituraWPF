@@ -1,4 +1,4 @@
-﻿// UpdaterHost/Program.cs
+// UpdaterHost/Program.cs
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -6,16 +6,48 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Windows;
 
 namespace UpdaterHost
 {
     internal static class Program
     {
+        // Janela de progresso exibida em thread separada
+        private static ProgressWindow? _window;
+
+        [STAThread]
         private static int Main(string[] args)
         {
             var cfg = Args.Parse(args);
             var log = new FileLogger(cfg.LogPath);
 
+            // Inicia UI em outra thread para não bloquear o processo de atualização
+            var uiThread = new Thread(() =>
+            {
+                _window = new ProgressWindow();
+                ProgressReporter.ProgressChanged += msg =>
+                    _window.Dispatcher.Invoke(() => _window.SetStatus(msg));
+                var app = new Application();
+                app.Run(_window);
+            });
+            uiThread.SetApartmentState(ApartmentState.STA);
+            uiThread.Start();
+
+            // Aguarda janela ser criada
+            while (_window == null || !_window.IsLoaded)
+                Thread.Sleep(50);
+
+            int result = RunUpdate(args, cfg, log);
+
+            // Encerra UI
+            _window.Dispatcher.Invoke(() => _window.Close());
+            uiThread.Join();
+
+            return result;
+        }
+
+        private static int RunUpdate(string[] args, Args cfg, FileLogger log)
+        {
             try
             {
                 log.Info("=== UpdaterHost iniciado (gerenciado, sem shell) ===");
@@ -35,11 +67,13 @@ namespace UpdaterHost
                 // Espera o app principal fechar (por PID ou nome)
                 if (cfg.ParentPid > 0)
                 {
+                    ProgressReporter.Report($"Aguardando processo PID {cfg.ParentPid} encerrar...");
                     log.Info($"Aguardando processo PID {cfg.ParentPid} encerrar...");
                     WaitForPidExit(cfg.ParentPid, cfg.AppExeName, log, 120);
                 }
                 else
                 {
+                    ProgressReporter.Report($"Aguardando '{cfg.AppExeName}' encerrar...");
                     log.Info($"Aguardando '{cfg.AppExeName}' encerrar...");
                     WaitForProcessNameExit(cfg.AppExeName, log, 120);
                 }
@@ -51,6 +85,7 @@ namespace UpdaterHost
                     throw new InvalidOperationException("Diretório de instalação inexistente.");
 
                 // Prepara backup
+                ProgressReporter.Report("Criando backup...");
                 var backupDir = Path.Combine(Path.GetTempPath(), $"backup_{Guid.NewGuid():N}");
                 log.Info($"Criando backup: {backupDir}");
                 Directory.CreateDirectory(backupDir);
@@ -59,6 +94,7 @@ namespace UpdaterHost
                 try
                 {
                     // Aplica a atualização
+                    ProgressReporter.Report("Aplicando atualização...");
                     log.Info("Aplicando atualização (cópia recursiva com overwrite)...");
                     ApplyUpdate(cfg, log);
 
@@ -72,6 +108,7 @@ namespace UpdaterHost
                     {
                         try
                         {
+                            ProgressReporter.Report("Criando atalho...");
                             CreateShortcutOnDesktop(cfg, exePath, log);
                         }
                         catch (Exception ex)
@@ -80,12 +117,12 @@ namespace UpdaterHost
                         }
                     }
 
-                    // Marca sucesso com informações de versão, se disponíveis
+                    // Marca sucesso
                     var flagContent = (!string.IsNullOrWhiteSpace(cfg.OldVersion) && !string.IsNullOrWhiteSpace(cfg.NewVersion))
                         ? $"{cfg.OldVersion}|{cfg.NewVersion}"
                         : "ok";
                     WriteText(cfg.SuccessFlagPath, flagContent);
-                    TryDeleteFile(cfg.ErrorFlagPath, log); // TryDeleteFile já faz o Exists/try-catch interno
+                    TryDeleteFile(cfg.ErrorFlagPath, log);
 
                     log.Info("Atualização concluída com sucesso.");
                     TryDeleteDirectory(backupDir, log);
@@ -116,6 +153,7 @@ namespace UpdaterHost
                 }
 
                 // Relança app
+                ProgressReporter.Report("Relançando aplicação...");
                 var relaunch = Path.Combine(cfg.InstallDir, cfg.AppExeName);
                 if (File.Exists(relaunch))
                 {
@@ -133,6 +171,7 @@ namespace UpdaterHost
                     log.Warn("Executável não encontrado para relançar.");
                 }
 
+                ProgressReporter.Report("Finalizado.");
                 log.Info("UpdaterHost finalizado.");
                 return 0;
             }
@@ -150,7 +189,6 @@ namespace UpdaterHost
         }
 
         // ====== Aplicação da atualização ======
-
         private static void ApplyUpdate(Args cfg, FileLogger log)
         {
             var installFiles = ListRelativeFiles(cfg.InstallDir);
@@ -191,7 +229,7 @@ namespace UpdaterHost
 
         private static void CopyDirectory(string sourceDir, string destDir, FileLogger log, IEnumerable<string> excludeNames = null)
         {
-            excludeNames = excludeNames ?? new string[0];
+            excludeNames = excludeNames ?? Array.Empty<string>();
             Directory.CreateDirectory(destDir);
 
             foreach (var dir in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
@@ -234,7 +272,6 @@ namespace UpdaterHost
         }
 
         // ====== IO helpers ======
-
         private static void CopyFile(string src, string dst, bool overwrite, FileLogger log)
         {
             for (int i = 0; i < 5; i++)
@@ -297,7 +334,6 @@ namespace UpdaterHost
         }
 
         // ====== Esperas/Permissões ======
-
         private static void WaitForPidExit(int pid, string exeName, FileLogger log, int timeoutSeconds)
         {
             var sw = Stopwatch.StartNew();
@@ -379,7 +415,6 @@ namespace UpdaterHost
         }
 
         // ====== Criar atalho (COM interop forte; sem dynamic) ======
-
         private static void CreateShortcutOnDesktop(Args cfg, string exePath, FileLogger log)
         {
             try
@@ -404,8 +439,14 @@ namespace UpdaterHost
         }
     }
 
-    // ====== argumentos/DTOs ======
+    internal static class ProgressReporter
+    {
+        public static event Action<string> ProgressChanged;
+        public static void Report(string message)
+            => ProgressChanged?.Invoke(message);
+    }
 
+    // ====== argumentos/DTOs ======
     internal sealed class Args
     {
         public string InstallDir { get; private set; }
@@ -492,7 +533,6 @@ namespace UpdaterHost
     }
 
     // ====== COM interop para atalho ======
-
     [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
     internal class ShellLink { }
 
@@ -532,3 +572,4 @@ namespace UpdaterHost
         void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string ppszFileName);
     }
 }
+
