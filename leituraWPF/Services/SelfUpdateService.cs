@@ -159,7 +159,17 @@ namespace leituraWPF.Services
                 }
 
                 var p = Process.Start(psi);
-                if (p == null) throw new InvalidOperationException("Falha ao iniciar UpdaterHost.");
+                if (p == null)
+                    throw new InvalidOperationException("Falha ao iniciar UpdaterHost.");
+
+                // Se o processo terminar imediatamente é sinal de falha (ex.: dependências ausentes)
+                await Task.Delay(1000);
+                if (p.HasExited)
+                {
+                    var code = p.ExitCode;
+                    p.Dispose();
+                    throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
+                }
 
                 _logger.LogInfo("UpdaterHost iniciado. Feche o app para permitir a troca segura dos arquivos.");
                 r.Success = true;
