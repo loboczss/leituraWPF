@@ -25,8 +25,24 @@ namespace UpdaterHost
             var uiThread = new Thread(() =>
             {
                 _window = new ProgressWindow();
+
+                // Atualiza a UI sempre que houver progresso, mas ignora
+                // sinais de cancelamento caso a janela já tenha sido
+                // encerrada. O Dispatcher lança OperationCanceledException
+                // quando está em processo de shutdown e, se não tratada,
+                // derruba o processo de atualização.
                 ProgressReporter.ProgressChanged += msg =>
-                    _window.Dispatcher.Invoke(() => _window.SetStatus(msg));
+                {
+                    try
+                    {
+                        _window?.Dispatcher?.Invoke(() => _window.SetStatus(msg));
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Dispatcher foi finalizado; não há mais nada a fazer.
+                    }
+                };
+
                 var app = new Application();
                 app.Run(_window);
             });
@@ -39,8 +55,17 @@ namespace UpdaterHost
 
             int result = RunUpdate(args, cfg, log);
 
-            // Encerra UI
-            _window.Dispatcher.Invoke(() => _window.Close());
+            // Encerra UI com segurança
+            try
+            {
+                if (_window != null && !_window.Dispatcher.HasShutdownStarted)
+                    _window.Dispatcher.Invoke(() => _window.Close());
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignorado: dispatcher já foi finalizado
+            }
+
             uiThread.Join();
 
             return result;
