@@ -42,6 +42,7 @@
 	<PropertyGroup>
 		<UpdaterHostTFM>net8.0-windows</UpdaterHostTFM>
 		<UpdaterHostOutDir>$(MSBuildProjectDirectory)\..\UpdaterHost\bin\$(Configuration)\$(UpdaterHostTFM)\</UpdaterHostOutDir>
+		<ApplicationIcon>bin\Debug\net8.0-windows\ico-app.ico</ApplicationIcon>
 	</PropertyGroup>
 
 	<!-- 3) Copia o UpdaterHost para a pasta do app no Build -->
@@ -54,9 +55,7 @@
 			<_HostFiles Include="$(UpdaterHostOutDir)UpdaterHost.exe.config" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.exe.config')" />
 			<_HostFiles Include="$(UpdaterHostOutDir)UpdaterHost.pdb" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.pdb')" />
 		</ItemGroup>
-		<Copy SourceFiles="@(_HostFiles)"
-			  DestinationFolder="$(TargetDir)"
-			  SkipUnchangedFiles="true" />
+		<Copy SourceFiles="@(_HostFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
 	</Target>
 
 	<!-- 4) Copia o UpdaterHost para a pasta de Publish -->
@@ -68,9 +67,7 @@
 			<_HostFilesPub Include="$(UpdaterHostOutDir)UpdaterHost.runtimeconfig.json" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.runtimeconfig.json')" />
 			<_HostFilesPub Include="$(UpdaterHostOutDir)UpdaterHost.exe.config" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.exe.config')" />
 		</ItemGroup>
-		<Copy SourceFiles="@(_HostFilesPub)"
-			  DestinationFolder="$(PublishDir)"
-			  SkipUnchangedFiles="true" />
+		<Copy SourceFiles="@(_HostFilesPub)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
 	</Target>
 	<!-- ========= FIM INTEGRAÇÃO UPDATERHOST ========= -->
 
