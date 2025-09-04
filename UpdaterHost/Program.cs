@@ -35,7 +35,10 @@ namespace UpdaterHost
                 {
                     try
                     {
-                        _window?.Dispatcher?.Invoke(() => _window.SetStatus(msg));
+                        if (_window != null && !_window.Dispatcher.HasShutdownStarted)
+                        {
+                            _window.Dispatcher.Invoke(() => _window.SetStatus(msg));
+                        }
                     }
                     catch (OperationCanceledException)
                     {
