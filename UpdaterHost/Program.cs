@@ -80,8 +80,11 @@ namespace UpdaterHost
                         }
                     }
 
-                    // Marca sucesso
-                    WriteText(cfg.SuccessFlagPath, "ok " + DateTime.Now.ToString("s"));
+                    // Marca sucesso com informações de versão, se disponíveis
+                    var flagContent = (!string.IsNullOrWhiteSpace(cfg.OldVersion) && !string.IsNullOrWhiteSpace(cfg.NewVersion))
+                        ? $"{cfg.OldVersion}|{cfg.NewVersion}"
+                        : "ok";
+                    WriteText(cfg.SuccessFlagPath, flagContent);
                     TryDeleteFile(cfg.ErrorFlagPath, log); // TryDeleteFile já faz o Exists/try-catch interno
 
                     log.Info("Atualização concluída com sucesso.");
@@ -414,6 +417,8 @@ namespace UpdaterHost
         public string LogPath { get; private set; }
         public bool CreateShortcut { get; private set; }
         public string ShortcutName { get; private set; }
+        public string OldVersion { get; private set; }
+        public string NewVersion { get; private set; }
 
         public static Args Parse(string[] a)
         {
@@ -435,14 +440,17 @@ namespace UpdaterHost
                 ErrorFlagPath = d.TryGet("--error"),
                 LogPath = d.TryGet("--log"),
                 CreateShortcut = d.TryGetBool("--shortcut"),
-                ShortcutName = d.TryGet("--shortcutName", "CompillerLog.lnk")
+                ShortcutName = d.TryGet("--shortcutName", "CompillerLog.lnk"),
+                OldVersion = d.TryGet("--oldVersion"),
+                NewVersion = d.TryGet("--newVersion")
             };
         }
 
         public override string ToString()
         {
             return $"Install='{InstallDir}', Staging='{StagingDir}', Exe='{AppExeName}', Pid={ParentPid}, " +
-                   $"Success='{SuccessFlagPath}', Error='{ErrorFlagPath}', Log='{LogPath}', Shortcut={CreateShortcut}, ShortcutName='{ShortcutName}'";
+                   $"Success='{SuccessFlagPath}', Error='{ErrorFlagPath}', Log='{LogPath}', Shortcut={CreateShortcut}, ShortcutName='{ShortcutName}', " +
+                   $"OldVersion='{OldVersion}', NewVersion='{NewVersion}'";
         }
     }
 

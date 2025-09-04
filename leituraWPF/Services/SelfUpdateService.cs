@@ -137,6 +137,8 @@ namespace leituraWPF.Services
                     successFlag: UpdateSuccessMarkerPath,
                     errorFlag: UpdateErrorMarkerPath,
                     logPath: UpdateLogPath,
+                    oldVersion: check.LocalVersion?.ToString() ?? string.Empty,
+                    newVersion: check.RemoteVersion?.ToString() ?? string.Empty,
                     createShortcut: true,
                     shortcutName: "CompillerLog.lnk"
                 );
@@ -351,6 +353,7 @@ namespace leituraWPF.Services
 
         private string BuildUpdaterArgs(string installDir, string stagingDir, string appExeName,
             int parentPid, string successFlag, string errorFlag, string logPath,
+            string oldVersion, string newVersion,
             bool createShortcut, string shortcutName)
         {
             var sb = new StringBuilder();
@@ -365,6 +368,8 @@ namespace leituraWPF.Services
             A("--success", successFlag);
             A("--error", errorFlag);
             A("--log", logPath);
+            A("--oldVersion", oldVersion);
+            A("--newVersion", newVersion);
             C("--shortcut", createShortcut);
             A("--shortcutName", shortcutName);
 
