@@ -88,9 +88,22 @@ namespace leituraWPF
                 var flag = SelfUpdateService.UpdateSuccessMarkerPath;
                 if (File.Exists(flag))
                 {
+                    var info = File.ReadAllText(flag).Trim();
                     File.Delete(flag);
+
+                    string message = "Aplicativo atualizado com sucesso!";
+                    if (!string.IsNullOrWhiteSpace(info))
+                    {
+                        var parts = info.Split('|');
+                        if (parts.Length >= 2)
+                        {
+                            message += $"\nVersão anterior: {parts[0]}";
+                            message += $"\nVersão atual: {parts[1]}";
+                        }
+                    }
+
                     System.Windows.MessageBox.Show(
-                        "Aplicativo atualizado com sucesso!",
+                        message,
                         "Atualização",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
