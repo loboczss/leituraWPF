@@ -187,16 +187,21 @@ namespace leituraWPF.Services
                         throw;
                     }
                 }
-                else if (p.ExitCode != 0)
-                {
-                    // Saiu imediatamente com erro
-                    var code = p.ExitCode;
-                    p.Dispose();
-                    throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
-                }
                 else
                 {
-                    // Saiu com sucesso rápido → provavelmente relançou elevado
+                    var code = p.ExitCode;
+                    p.Dispose();
+
+                    // Se não houver outro processo UpdaterHost rodando, tratamos
+                    // como falha. Isso evita que o aplicativo feche sem que a
+                    // atualização seja realmente iniciada.
+                    var hostName = Path.GetFileNameWithoutExtension(UpdaterHostName);
+                    var existsOther = Process.GetProcessesByName(hostName).Any();
+                    if (!existsOther || code != 0)
+                        throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
+
+                    // Saiu com êxito rapidamente e existe outra instância em
+                    // execução → provavelmente relançado para elevação.
                     _logger.LogInfo("UpdaterHost reiniciado para elevação.");
                 }
 
