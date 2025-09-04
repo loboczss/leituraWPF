@@ -411,7 +411,34 @@ namespace UpdaterHost
         private static string QuoteIfNeeded(string s)
         {
             if (string.IsNullOrEmpty(s)) return "\"\"";
-            return s.IndexOf(' ') >= 0 ? ("\"" + s.Replace("\"", "\\\"") + "\"") : s;
+            bool needQuotes = s.IndexOf(' ') >= 0 || s.IndexOf('\t') >= 0 || s.IndexOf('\"') >= 0 || s.EndsWith("\\");
+            if (!needQuotes) return s;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append('"');
+            int backslashes = 0;
+            foreach (char c in s)
+            {
+                if (c == '\\')
+                {
+                    backslashes++;
+                }
+                else if (c == '"')
+                {
+                    sb.Append('\', backslashes * 2 + 1);
+                    sb.Append('"');
+                    backslashes = 0;
+                }
+                else
+                {
+                    sb.Append('\', backslashes);
+                    backslashes = 0;
+                    sb.Append(c);
+                }
+            }
+            sb.Append('\', backslashes * 2);
+            sb.Append('"');
+            return sb.ToString();
         }
 
         // ====== Criar atalho (COM interop forte; sem dynamic) ======

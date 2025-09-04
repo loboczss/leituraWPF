@@ -385,9 +385,9 @@ namespace leituraWPF.Services
             bool createShortcut, string shortcutName)
         {
             var sb = new StringBuilder();
-            void A(string k, string v) { sb.Append(" ").Append(k).Append(" \"").Append(v).Append("\""); }
-            void B(string k, int v) { sb.Append(" ").Append(k).Append(" ").Append(v); }
-            void C(string k, bool v) { sb.Append(" ").Append(k).Append(" ").Append(v ? "true" : "false"); }
+            void A(string k, string v) { sb.Append(' ').Append(k).Append(' ').Append(EscapeArg(v)); }
+            void B(string k, int v) { sb.Append(' ').Append(k).Append(' ').Append(v); }
+            void C(string k, bool v) { sb.Append(' ').Append(k).Append(' ').Append(v ? "true" : "false"); }
 
             A("--install", installDir);
             A("--staging", stagingDir);
@@ -401,6 +401,39 @@ namespace leituraWPF.Services
             C("--shortcut", createShortcut);
             A("--shortcutName", shortcutName);
 
+            return sb.ToString();
+        }
+
+        private static string EscapeArg(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "\"\"";
+            bool needQuotes = s.IndexOf(' ') >= 0 || s.IndexOf('\t') >= 0 || s.IndexOf('\"') >= 0 || s.EndsWith("\\");
+            if (!needQuotes) return s;
+
+            var sb = new StringBuilder();
+            sb.Append('"');
+            int backslashes = 0;
+            foreach (char c in s)
+            {
+                if (c == '\\')
+                {
+                    backslashes++;
+                }
+                else if (c == '"')
+                {
+                    sb.Append('\', backslashes * 2 + 1);
+                    sb.Append('"');
+                    backslashes = 0;
+                }
+                else
+                {
+                    sb.Append('\', backslashes);
+                    backslashes = 0;
+                    sb.Append(c);
+                }
+            }
+            sb.Append('\', backslashes * 2);
+            sb.Append('"');
             return sb.ToString();
         }
 
