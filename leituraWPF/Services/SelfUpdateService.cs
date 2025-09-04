@@ -162,13 +162,31 @@ namespace leituraWPF.Services
                 if (p == null)
                     throw new InvalidOperationException("Falha ao iniciar UpdaterHost.");
 
-                // Se o processo terminar imediatamente é sinal de falha (ex.: dependências ausentes)
-                await Task.Delay(1000);
-                if (p.HasExited)
+                // Aguarda até que o UpdaterHost esteja pronto para receber
+                // entrada (janela inicializada). Caso contrário, consideramos
+                // que houve falha ao inicializar e abortamos a atualização.
+                try
                 {
-                    var code = p.ExitCode;
-                    p.Dispose();
-                    throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
+                    if (!p.WaitForInputIdle(5000))
+                    {
+                        if (p.HasExited)
+                        {
+                            var code = p.ExitCode;
+                            p.Dispose();
+                            throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
+                        }
+                        throw new InvalidOperationException("UpdaterHost não ficou pronto a tempo.");
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    if (p.HasExited)
+                    {
+                        var code = p.ExitCode;
+                        p.Dispose();
+                        throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
+                    }
+                    throw;
                 }
 
                 _logger.LogInfo("UpdaterHost iniciado. Feche o app para permitir a troca segura dos arquivos.");
