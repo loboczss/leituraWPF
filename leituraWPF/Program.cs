@@ -1,3 +1,4 @@
+// Program.cs
 using leituraWPF.Services;
 using leituraWPF.Utils;
 using System;
@@ -10,7 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 
-// Aliases para tirar ambiguidade de Application/Window
+// Aliases
 using WpfApp = System.Windows.Application;
 using WpfWindow = System.Windows.Window;
 
@@ -18,12 +19,11 @@ namespace leituraWPF
 {
     public static class Program
     {
-        public static AppConfig Config { get; private set; } = new();
+        public static AppConfig Config { get; private set; } = new AppConfig();
 
         [STAThread]
         public static void Main()
         {
-            // Single instance com timeout para evitar travamentos
             using var mutex = new Mutex(true, "leituraWPF_SINGLE_INSTANCE", out bool created);
             if (!created)
             {
@@ -47,21 +47,17 @@ namespace leituraWPF
         {
             try
             {
-                // Sinaliza a instância existente para mostrar a janela principal
                 using var evt = EventWaitHandle.OpenExisting("leituraWPF_SHOW_EVENT");
                 evt.Set();
                 return;
             }
             catch (WaitHandleCannotBeOpenedException)
             {
-                // Fallback para método nativo
             }
             catch
             {
-                // Ignorar outros erros de handle
             }
 
-            // Fallback: tentar ativar janela existente via Win32
             try
             {
                 var current = Process.GetCurrentProcess();
@@ -77,29 +73,19 @@ namespace leituraWPF
             }
             catch
             {
-                // Ignorar erros de Win32
             }
         }
 
         private static void RunApplication()
         {
-            // Configurar startup antes de tudo
-            try
-            {
-                StartupService.ConfigureStartup();
-            }
-            catch
-            {
-                // Não crítico - continuar sem startup automático
-            }
+            try { StartupService.ConfigureStartup(); } catch { }
 
-            // Carregar configuração
             LoadConfiguration();
 
-            // Exibir mensagem de sucesso caso tenha ocorrido atualização
+            // Sucesso pós-update (usa SelfUpdateService)
             try
             {
-                var flag = AtualizadorService.UpdateSuccessMarkerPath;
+                var flag = SelfUpdateService.UpdateSuccessMarkerPath;
                 if (File.Exists(flag))
                 {
                     File.Delete(flag);
@@ -110,12 +96,8 @@ namespace leituraWPF
                         MessageBoxImage.Information);
                 }
             }
-            catch
-            {
-                // Ignorar problemas ao verificar marcador de atualização
-            }
+            catch { }
 
-            // Inicializar serviços core
             var tokenService = new TokenService(Config);
             var funcService = new FuncionarioService(Config, tokenService);
 
@@ -127,10 +109,8 @@ namespace leituraWPF
 
             try
             {
-                // Inicializar backup service
                 backup = new BackupUploaderService(Config, tokenService);
 
-                // Carregar pendentes em background
                 _ = Task.Run(async () =>
                 {
                     try
@@ -140,56 +120,44 @@ namespace leituraWPF
                     }
                     catch
                     {
-                        // Falha silenciosa - backup não é crítico
                     }
                 });
 
-                // Criar aplicação WPF
                 var app = new App();
                 app.InitializeComponent();
                 app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-                // Token para cancelamento global
                 appCts = new CancellationTokenSource();
 
-                // Mostrar login
                 var login = new LoginWindow(funcService, backup);
 
-                // Configurar poller antes do login
+                // Poller com SelfUpdateService (gerenciado, sem shell)
                 updatePoller = CreateUpdatePoller(login);
 
-                // Processo de login
                 var loginResult = login.ShowDialog();
-
                 if (loginResult != true || login.FuncionarioLogado == null)
                 {
-                    // Login cancelado - cleanup e exit
                     return;
                 }
 
-                // Login bem-sucedido - inicializar janela principal
                 app.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
                 var main = new MainWindow(login.FuncionarioLogado, backup);
                 app.MainWindow = main;
 
-                // Configurar sistema de mostrar janela
                 showEvent = SetupShowWindowSystem(main, app);
 
-                // Configurar tray
                 tray = new TrayService(
                     showWindow: () => ShowMainWindow(main, app),
                     sync: () => SafeExecute(() => main.RunManualSync()),
                     exit: () => SafeExecute(() => app.Dispatcher.BeginInvoke(() => main.ForceClose()))
                 );
 
-                // Mostrar janela e executar aplicação
                 main.Show();
                 app.Run();
             }
             finally
             {
-                // Cleanup de recursos
                 SafeDispose(appCts);
                 SafeDispose(tray);
                 SafeDispose(updatePoller);
@@ -214,7 +182,6 @@ namespace leituraWPF
                 }
                 catch
                 {
-                    // Ignorar e tentar arquivo local
                 }
 
                 if (string.IsNullOrWhiteSpace(json))
@@ -258,12 +225,14 @@ namespace leituraWPF
 
         private static UpdatePoller CreateUpdatePoller(LoginWindow login)
         {
+            IUpdateService svc = new SelfUpdateService(new DefaultLogger());
+
             return new UpdatePoller(
-                service: new AtualizadorService(),
+                service: svc,
                 ownerResolver: () => GetCurrentVisibleWindow(login),
-                baseInterval: TimeSpan.FromMinutes(15), // Intervalo maior para reduzir carga
+                baseInterval: TimeSpan.FromMinutes(15),
                 maxInterval: TimeSpan.FromHours(2),
-                initialDelay: TimeSpan.FromSeconds(30) // Delay maior para estabilizar
+                initialDelay: TimeSpan.FromSeconds(30)
             );
         }
 
@@ -271,20 +240,13 @@ namespace leituraWPF
         {
             try
             {
-                // Preferir MainWindow se visível
                 if (WpfApp.Current?.MainWindow?.IsVisible == true)
                     return WpfApp.Current.MainWindow;
-
-                // Fallback para login se visível
                 if (login?.IsVisible == true)
                     return login;
-
                 return null;
             }
-            catch
-            {
-                return null;
-            }
+            catch { return null; }
         }
 
         private static EventWaitHandle SetupShowWindowSystem(MainWindow main, App app)
@@ -293,7 +255,6 @@ namespace leituraWPF
             {
                 var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "leituraWPF_SHOW_EVENT");
 
-                // Background task para monitorar evento
                 _ = Task.Run(async () =>
                 {
                     try
@@ -305,14 +266,12 @@ namespace leituraWPF
                                 ShowMainWindow(main, app);
                             }
 
-                            // Verificar se app ainda está ativo
                             if (app.Dispatcher.HasShutdownStarted)
                                 break;
                         }
                     }
                     catch
                     {
-                        // Task vai terminar silenciosamente
                     }
                 });
 
@@ -320,7 +279,6 @@ namespace leituraWPF
             }
             catch
             {
-                // Retornar handle dummy se falhar
                 return new EventWaitHandle(false, EventResetMode.AutoReset);
             }
         }
@@ -347,38 +305,22 @@ namespace leituraWPF
                     }
                     catch
                     {
-                        // Ignorar erros de UI
                     }
                 });
             }
             catch
             {
-                // Ignorar erros de dispatcher
             }
         }
 
         private static void SafeExecute(Action action)
         {
-            try
-            {
-                action?.Invoke();
-            }
-            catch
-            {
-                // Execução segura - ignorar erros
-            }
+            try { action?.Invoke(); } catch { }
         }
 
         private static void SafeDispose(IDisposable? disposable)
         {
-            try
-            {
-                disposable?.Dispose();
-            }
-            catch
-            {
-                // Dispose seguro - ignorar erros
-            }
+            try { disposable?.Dispose(); } catch { }
         }
 
         private static void LogError(string message)
@@ -386,15 +328,10 @@ namespace leituraWPF
             try
             {
                 Debug.WriteLine($"[ERROR] {DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}");
-
-                // Log em arquivo se necessário
                 var logPath = Path.Combine(AppContext.BaseDirectory, "error.log");
                 File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}\n");
             }
-            catch
-            {
-                // Ignorar erros de log
-            }
+            catch { }
         }
 
         private static void LogFatalError(Exception ex)
@@ -403,14 +340,10 @@ namespace leituraWPF
             {
                 var message = $"FATAL: {ex.Message}\n{ex.StackTrace}";
                 Debug.WriteLine($"[FATAL] {DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}");
-
                 var logPath = Path.Combine(AppContext.BaseDirectory, "fatal.log");
                 File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}\n");
             }
-            catch
-            {
-                // Último recurso - não pode falhar
-            }
+            catch { }
         }
     }
 }
