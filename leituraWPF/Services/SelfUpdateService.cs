@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using leituraWPF.Views;
 
 namespace leituraWPF.Services
 {
@@ -98,6 +99,9 @@ namespace leituraWPF.Services
             var r = new UpdatePerformResult();
             string zipPath = null;
             string stagingDir = null;
+            var progressWindow = new UpdateProgressWindow();
+            progressWindow.SetStatus("Verificando atualizações...", 0);
+            progressWindow.Show();
 
             try
             {
@@ -118,10 +122,11 @@ namespace leituraWPF.Services
                     r.Message = validation.Message;
                     return r;
                 }
-
+                progressWindow.SetStatus("Baixando release...", 30);
                 _logger.LogInfo("Baixando release...");
                 zipPath = await DownloadWithValidationAsync(ct);
 
+                progressWindow.SetStatus("Preparando staging...", 60);
                 _logger.LogInfo("Preparando staging a partir do ZIP...");
                 stagingDir = PrepareStagingDirectoryFromZip(zipPath);
 
@@ -142,7 +147,7 @@ namespace leituraWPF.Services
                     createShortcut: true,
                     shortcutName: "CompillerLog.lnk"
                 );
-
+                progressWindow.SetStatus("Iniciando instalador...", 90);
                 _logger.LogInfo("Disparando UpdaterHost...");
                 var psi = new ProcessStartInfo
                 {
@@ -161,6 +166,7 @@ namespace leituraWPF.Services
                 var p = Process.Start(psi);
                 if (p == null) throw new InvalidOperationException("Falha ao iniciar UpdaterHost.");
 
+                progressWindow.SetStatus("Atualização iniciada.", 100);
                 _logger.LogInfo("UpdaterHost iniciado. Feche o app para permitir a troca segura dos arquivos.");
                 r.Success = true;
                 r.RemoteFetchSuccessful = true;
@@ -183,6 +189,7 @@ namespace leituraWPF.Services
             {
                 try { if (zipPath != null && File.Exists(zipPath)) File.Delete(zipPath); } catch { }
                 // stagingDir é limpo pelo UpdaterHost ao final (sucesso/rollback)
+                progressWindow.Close();
             }
         }
 

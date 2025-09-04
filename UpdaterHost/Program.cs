@@ -176,7 +176,9 @@ namespace UpdaterHost
                 var src = Path.Combine(cfg.StagingDir, rel);
                 var dst = Path.Combine(cfg.InstallDir, rel);
 
-                Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                var dirDst = Path.GetDirectoryName(dst);
+                if (!string.IsNullOrWhiteSpace(dirDst))
+                    Directory.CreateDirectory(dirDst);
                 CopyFile(src, dst, overwrite: true, log);
             }
         }
@@ -209,7 +211,9 @@ namespace UpdaterHost
                 var rel = file.Substring(sourceDir.TrimEnd(Path.DirectorySeparatorChar).Length)
                               .TrimStart(Path.DirectorySeparatorChar);
                 var dst = Path.Combine(destDir, rel);
-                Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                var dstDir = Path.GetDirectoryName(dst);
+                if (!string.IsNullOrWhiteSpace(dstDir))
+                    Directory.CreateDirectory(dstDir);
                 CopyFile(file, dst, overwrite: true, log);
             }
         }
@@ -257,7 +261,9 @@ namespace UpdaterHost
             }
             using (var fsIn = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                var dir = Path.GetDirectoryName(dst);
+                if (!string.IsNullOrWhiteSpace(dir))
+                    Directory.CreateDirectory(dir);
                 using (var fsOut = new FileStream(dst, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
                     fsIn.CopyTo(fsOut, 1024 * 1024);
@@ -292,7 +298,9 @@ namespace UpdaterHost
 
         private static void WriteText(string path, string content)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(dir))
+                Directory.CreateDirectory(dir);
             File.WriteAllText(path, content);
         }
 
@@ -477,7 +485,14 @@ namespace UpdaterHost
             _path = string.IsNullOrWhiteSpace(path)
                 ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "update.log")
                 : path;
-            try { Directory.CreateDirectory(Path.GetDirectoryName(_path)); } catch { }
+
+            try
+            {
+                var dir = Path.GetDirectoryName(_path);
+                if (!string.IsNullOrWhiteSpace(dir))
+                    Directory.CreateDirectory(dir);
+            }
+            catch { }
         }
 
         public void Info(string m) => Write("INFO", m);
