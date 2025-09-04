@@ -148,26 +148,35 @@ namespace leituraWPF.Services
                 {
                     FileName = updaterPath,
                     Arguments = args,
-                    UseShellExecute = true, // permite Verb=runas se necessário
+                    UseShellExecute = true,
                     WorkingDirectory = InstallDir
                 };
-
-                if (!HasWritePermission(InstallDir))
-                {
-                    _logger.LogWarning("Sem permissão de escrita; tentando elevar para administrador...");
-                    psi.Verb = "runas";
-                }
 
                 var p = Process.Start(psi);
                 if (p == null)
                     throw new InvalidOperationException("Falha ao iniciar UpdaterHost.");
 
-                // Aguarda até que o UpdaterHost esteja pronto para receber
-                // entrada (janela inicializada). Caso contrário, consideramos
-                // que houve falha ao inicializar e abortamos a atualização.
-                try
+                // Aguarda brevemente para detectar encerramento imediato
+                await Task.Delay(1000, ct);
+                if (!p.HasExited)
                 {
-                    if (!p.WaitForInputIdle(5000))
+                    // Aguarda até que o UpdaterHost esteja pronto para receber
+                    // entrada (janela inicializada). Caso contrário, consideramos
+                    // que houve falha ao inicializar e abortamos a atualização.
+                    try
+                    {
+                        if (!p.WaitForInputIdle(5000))
+                        {
+                            if (p.HasExited)
+                            {
+                                var code = p.ExitCode;
+                                p.Dispose();
+                                throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
+                            }
+                            throw new InvalidOperationException("UpdaterHost não ficou pronto a tempo.");
+                        }
+                    }
+                    catch (InvalidOperationException)
                     {
                         if (p.HasExited)
                         {
@@ -175,18 +184,20 @@ namespace leituraWPF.Services
                             p.Dispose();
                             throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
                         }
-                        throw new InvalidOperationException("UpdaterHost não ficou pronto a tempo.");
+                        throw;
                     }
                 }
-                catch (InvalidOperationException)
+                else if (p.ExitCode != 0)
                 {
-                    if (p.HasExited)
-                    {
-                        var code = p.ExitCode;
-                        p.Dispose();
-                        throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
-                    }
-                    throw;
+                    // Saiu imediatamente com erro
+                    var code = p.ExitCode;
+                    p.Dispose();
+                    throw new InvalidOperationException($"UpdaterHost finalizado prematuramente (código {code}).");
+                }
+                else
+                {
+                    // Saiu com sucesso rápido → provavelmente relançou elevado
+                    _logger.LogInfo("UpdaterHost reiniciado para elevação.");
                 }
 
                 _logger.LogInfo("UpdaterHost iniciado. Feche o app para permitir a troca segura dos arquivos.");
@@ -457,21 +468,6 @@ namespace leituraWPF.Services
                 foreach (var f in files) if (File.Exists(f)) File.Delete(f);
             }
             catch (Exception ex) { _logger.LogWarning($"Falha ao limpar flags: {ex.Message}"); }
-        }
-
-        private static bool HasWritePermission(string dir)
-        {
-            try
-            {
-                var p = Path.Combine(dir, $"perm_{Guid.NewGuid():N}.tmp");
-                File.WriteAllText(p, "x");
-                File.Delete(p);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         private static Version ParseVersionFromTag(string tagName)
