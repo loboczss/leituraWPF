@@ -421,18 +421,18 @@ namespace leituraWPF.Services
                 }
                 else if (c == '"')
                 {
-                    sb.Append('\', backslashes * 2 + 1);
+                    sb.Append(new string('\\', backslashes * 2 + 1));
                     sb.Append('"');
                     backslashes = 0;
                 }
                 else
                 {
-                    sb.Append('\', backslashes);
+                    sb.Append(new string('\\', backslashes));
                     backslashes = 0;
                     sb.Append(c);
                 }
             }
-            sb.Append('\', backslashes * 2);
+            sb.Append(new string('\\', backslashes * 2));
             sb.Append('"');
             return sb.ToString();
         }
@@ -461,8 +461,17 @@ namespace leituraWPF.Services
 
         private static bool HasWritePermission(string dir)
         {
-            try { var p = Path.Combine(dir, $"perm_{Guid.NewGuid():N}.tmp"); File.WriteAllText(p, "x"); File.Delete(p); return true; }
-            catch { return false; }
+            try
+            {
+                var p = Path.Combine(dir, $"perm_{Guid.NewGuid():N}.tmp");
+                File.WriteAllText(p, "x");
+                File.Delete(p);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static Version ParseVersionFromTag(string tagName)
