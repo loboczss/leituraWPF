@@ -624,8 +624,13 @@ namespace leituraWPF.Services
                     FileName = batchPath,
                     UseShellExecute = true,
                     WindowStyle = ProcessWindowStyle.Hidden,
-                    Verb = "runas" // Executa como administrador se necessário
+                    WorkingDirectory = Path.GetDirectoryName(batchPath) ?? string.Empty
                 };
+
+                if (!CanWrite(InstallDir))
+                {
+                    startInfo.Verb = "runas"; // Eleva apenas se não houver permissão de escrita
+                }
 
                 var process = Process.Start(startInfo);
                 if (process == null)
@@ -637,6 +642,20 @@ namespace leituraWPF.Services
             {
                 _logger.LogError($"Erro ao executar script de atualização: {ex.Message}", ex);
                 throw;
+            }
+        }
+
+        private static bool CanWrite(string dir)
+        {
+            try
+            {
+                var testFile = Path.Combine(dir, Path.GetRandomFileName());
+                using (File.Create(testFile, 1, FileOptions.DeleteOnClose)) { }
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
