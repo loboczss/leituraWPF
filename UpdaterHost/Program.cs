@@ -379,8 +379,17 @@ namespace UpdaterHost
 
         private static bool CanWrite(string dir)
         {
-            try { var p = Path.Combine(dir, $"w_{Guid.NewGuid():N}.tmp"); File.WriteAllText(p, "x"); File.Delete(p); return true; }
-            catch { return false; }
+            try
+            {
+                var p = Path.Combine(dir, $"w_{Guid.NewGuid():N}.tmp");
+                File.WriteAllText(p, "x");
+                File.Delete(p);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool IsAdministrator()
@@ -425,18 +434,18 @@ namespace UpdaterHost
                 }
                 else if (c == '"')
                 {
-                    sb.Append('\', backslashes * 2 + 1);
+                    sb.Append(new string('\\', backslashes * 2 + 1));
                     sb.Append('"');
                     backslashes = 0;
                 }
                 else
                 {
-                    sb.Append('\', backslashes);
+                    sb.Append(new string('\\', backslashes));
                     backslashes = 0;
                     sb.Append(c);
                 }
             }
-            sb.Append('\', backslashes * 2);
+            sb.Append(new string('\\', backslashes * 2));
             sb.Append('"');
             return sb.ToString();
         }
