@@ -98,6 +98,9 @@ namespace leituraWPF
 
             try
             {
+                // garante que o serviço de backup esteja ativo também na tela de login
+                _backup.Start();
+
                 BtnLogin.IsEnabled = false;
                 StatusMessage = "Carregando...";
 
