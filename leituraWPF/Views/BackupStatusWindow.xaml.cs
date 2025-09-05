@@ -141,7 +141,12 @@ namespace leituraWPF
                 await Dispatcher.InvokeAsync(() =>
                 {
                     CurrentStatusText = "Carregando arquivos...";
-                    RefreshCollections();
+                });
+
+                await RefreshCollectionsAsync();
+
+                await Dispatcher.InvokeAsync(() =>
+                {
                     LoadHistory();
                     UpdateProgress();
                     UpdateCounters();
@@ -260,9 +265,10 @@ namespace leituraWPF
         {
             try
             {
+                await RefreshCollectionsAsync();
+
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    RefreshCollections();
                     LoadHistory();
                     UpdateProgress();
                     UpdateCounters();
@@ -276,30 +282,38 @@ namespace leituraWPF
         #endregion
 
         #region Private Methods
-        private void RefreshCollections()
+        private async Task RefreshCollectionsAsync()
         {
             try
             {
-                // Atualiza pendentes
-                _pending.Clear();
-                var pendingFiles = _backup.GetPendingFiles();
-                foreach (var filePath in pendingFiles)
-                {
-                    var fileName = Path.GetFileName(filePath);
-                    var fileInfo = new FileInfo(filePath);
+                var items = await Task.Run(() =>
+                    _backup.GetPendingFiles()
+                        .Select(filePath =>
+                        {
+                            var fileName = Path.GetFileName(filePath);
+                            var fileInfo = new FileInfo(filePath);
+                            return new BackupItem
+                            {
+                                FileName = fileName,
+                                Size = FormatFileSize(fileInfo.Length),
+                                FilePath = filePath
+                            };
+                        }).ToList());
 
-                    _pending.Add(new BackupItem
-                    {
-                        FileName = fileName,
-                        Size = FormatFileSize(fileInfo.Length),
-                        FilePath = filePath
-                    });
-                }
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    _pending.Clear();
+                    foreach (var item in items)
+                        _pending.Add(item);
+                });
             }
             catch (Exception ex)
             {
-                CurrentStatusText = $"Erro ao atualizar listas: {ex.Message}";
-                Debug.WriteLine($"Erro em RefreshCollections: {ex}");
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    CurrentStatusText = $"Erro ao atualizar listas: {ex.Message}";
+                });
+                Debug.WriteLine($"Erro em RefreshCollectionsAsync: {ex}");
             }
         }
 
@@ -352,13 +366,15 @@ namespace leituraWPF
                 if (total == 0)
                 {
                     ProgressBar.Value = 0;
-                    ProgressText.Text = "0%";
+                    MainProgress.Text = "0%";
+                    ProgressText.Text = "0 de 0 arquivos";
                     return;
                 }
 
                 double percent = (completed * 100.0) / total;
                 ProgressBar.Value = Math.Min(percent, 100);
-                ProgressText.Text = $"{percent:F1}%";
+                MainProgress.Text = $"{percent:F1}%";
+                ProgressText.Text = $"{completed} de {total} arquivos";
 
                 // Verifica se completou
                 if (completed == total && total > 0)
