@@ -10,13 +10,15 @@ using Newtonsoft.Json.Linq;
 namespace leituraWPF.Services
 {
     /// <summary>
-    /// Serviço de atualização que delega todo o processo ao aplicativo externo AtualizaAPP.exe.
+    /// Serviço de atualização que delega todo o processo ao aplicativo externo AtualizaAPP.exe
+    /// localizado na subpasta "AtualizaAPP".
     /// Apenas verifica se há nova versão disponível e, quando requisitado, inicia o executável externo.
     /// </summary>
     public class ExternalUpdateService : IUpdateService
     {
         private const string ApiUrl = "https://api.github.com/repos/loboczss/leituraWPF/releases/latest";
         private const string UpdaterExe = "AtualizaAPP.exe";
+        private const string UpdaterDir = "AtualizaAPP";
         private static string InstallDir => AppDomain.CurrentDomain.BaseDirectory;
 
         public async Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken ct = default)
@@ -52,7 +54,7 @@ namespace leituraWPF.Services
             var result = new UpdatePerformResult { RemoteFetchSuccessful = true };
             try
             {
-                var exePath = Path.Combine(InstallDir, UpdaterExe);
+                var exePath = Path.Combine(InstallDir, UpdaterDir, UpdaterExe);
                 if (!File.Exists(exePath))
                 {
                     result.Success = false;
@@ -60,7 +62,12 @@ namespace leituraWPF.Services
                     return Task.FromResult(result);
                 }
 
-                Process.Start(new ProcessStartInfo(exePath) { UseShellExecute = true });
+                var psi = new ProcessStartInfo(exePath)
+                {
+                    UseShellExecute = true,
+                    WorkingDirectory = Path.GetDirectoryName(exePath)
+                };
+                Process.Start(psi);
                 result.Success = true;
             }
             catch (Exception ex)
