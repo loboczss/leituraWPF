@@ -136,7 +136,7 @@ namespace leituraWPF.Services
 
                 if (!wantsUpdate) return;
 
-                // 4) Executa a atualização (abre o AtualizaAPP.exe)
+                // 4) Executa a atualização (abre o AtualizaAPP.exe na subpasta "AtualizaAPP")
                 var update = await _service.PerformUpdateAsync().ConfigureAwait(false);
                 if (!update.Success)
                 {
