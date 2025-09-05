@@ -1,6 +1,5 @@
 ﻿// Services/UpdatePoller.cs
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 // Evitar colisões com WPF:
@@ -148,25 +147,8 @@ namespace leituraWPF.Services
                 // Aguarda 3 segundos para garantir que o AtualizaAPP.exe inicialize
                 await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
 
-                // 5) Fecha o app e encerra quaisquer instâncias remanescentes
-                await dispatcher.InvokeAsync(() =>
-                {
-                    try { WpfApp.Current.Shutdown(); } catch { /* ignore */ }
-                });
-
-                try
-                {
-                    var current = Process.GetCurrentProcess();
-                    foreach (var proc in Process.GetProcessesByName(current.ProcessName))
-                    {
-                        if (proc.Id != current.Id)
-                        {
-                            try { proc.Kill(); } catch { /* ignore */ }
-                        }
-                    }
-                    current.Kill();
-                }
-                catch { /* ignore */ }
+                // 5) Encerra a aplicação e todos os processos relacionados
+                await dispatcher.InvokeAsync(() => Program.ShutdownApplication());
             }
             catch
             {

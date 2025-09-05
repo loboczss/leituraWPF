@@ -22,6 +22,11 @@ namespace leituraWPF
     {
         public static AppConfig Config { get; private set; } = new AppConfig();
 
+        // References used for graceful shutdown
+        public static BackupUploaderService? BackupInstance { get; private set; }
+        public static UpdatePoller? UpdatePollerInstance { get; private set; }
+        public static TrayService? TrayInstance { get; private set; }
+
         [STAThread]
         public static void Main()
         {
@@ -96,6 +101,7 @@ namespace leituraWPF
             try
             {
                 backup = new BackupUploaderService(Config, tokenService);
+                BackupInstance = backup;
 
                 _ = Task.Run(async () =>
                 {
@@ -119,6 +125,7 @@ namespace leituraWPF
 
                 // Poller com serviço externo de atualização
                 updatePoller = CreateUpdatePoller(login);
+                UpdatePollerInstance = updatePoller;
 
                 var loginResult = login.ShowDialog();
                 if (loginResult != true || login.FuncionarioLogado == null)
@@ -136,8 +143,9 @@ namespace leituraWPF
                 tray = new TrayService(
                     showWindow: () => ShowMainWindow(main, app),
                     sync: () => SafeExecute(() => main.RunManualSync()),
-                    exit: () => SafeExecute(() => app.Dispatcher.BeginInvoke(() => main.ForceClose()))
+                    exit: () => SafeExecute(ShutdownApplication)
                 );
+                TrayInstance = tray;
 
                 main.Show();
                 app.Run();
@@ -297,6 +305,48 @@ namespace leituraWPF
             catch
             {
             }
+        }
+
+        public static void ShutdownApplication()
+        {
+            try
+            {
+                WpfApp.Current?.Dispatcher.Invoke(() =>
+                {
+                    try
+                    {
+                        if (WpfApp.Current.MainWindow is MainWindow mw)
+                            mw.ForceClose();
+                        else
+                            WpfApp.Current.MainWindow?.Close();
+                    }
+                    catch { }
+                });
+            }
+            catch { }
+
+            SafeDispose(UpdatePollerInstance);
+            UpdatePollerInstance = null;
+            SafeDispose(TrayInstance);
+            TrayInstance = null;
+            SafeDispose(BackupInstance);
+            BackupInstance = null;
+
+            try { WpfApp.Current?.Shutdown(); } catch { }
+
+            try
+            {
+                var current = Process.GetCurrentProcess();
+                foreach (var proc in Process.GetProcessesByName(current.ProcessName))
+                {
+                    if (proc.Id != current.Id)
+                    {
+                        try { proc.Kill(); } catch { }
+                    }
+                }
+                current.Kill();
+            }
+            catch { }
         }
 
         private static void EnsureVersionFile()
