@@ -171,7 +171,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid Background="{StaticResource BackgroundGray}" Margin="0,0,0,-221">
+    <Grid Background="{StaticResource BackgroundGray}" Margin="0,0,0,-154">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -209,8 +209,8 @@
                         <TextBlock Grid.Column="1" x:Name="MainProgress" Text="0%" FontSize="18" FontWeight="Bold" 
                                    Foreground="{StaticResource PrimaryBlue}"/>
                     </Grid>
-                    <ProgressBar x:Name="MainProgressBar" Style="{StaticResource ModernProgress}" Value="0" Maximum="100"/>
-                    <TextBlock x:Name="MainStatusText" Text="Preparando arquivos..." FontSize="11" 
+                    <ProgressBar x:Name="ProgressBar" Style="{StaticResource ModernProgress}" Value="0" Maximum="100"/>
+                    <TextBlock x:Name="ProgressText" Text="Preparando arquivos..." FontSize="11" 
                                Foreground="{StaticResource TextLight}" Margin="0,6,0,0" HorizontalAlignment="Center"/>
                 </StackPanel>
             </Grid>
@@ -233,7 +233,7 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Background="Yellow" CornerRadius="8" 
+                            <Border Grid.Column="0" Background="{StaticResource TextDark}" CornerRadius="8" 
                                     Width="32" Height="32" Margin="0,0,12,0">
                                 <TextBlock Text="📁" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
