@@ -137,6 +137,10 @@ namespace leituraWPF.Services
                 if (!wantsUpdate) return;
 
                 // 4) Executa a atualização (abre o AtualizaAPP.exe na subpasta "AtualizaAPP")
+                // Impede novas execuções do timer enquanto a atualização ocorre
+                _disposed = true;
+                try { _timer.Dispose(); } catch { /* ignore */ }
+
                 var update = await _service.PerformUpdateAsync().ConfigureAwait(false);
                 if (!update.Success)
                 {
