@@ -31,7 +31,6 @@ namespace leituraWPF
         private readonly BackupUploaderService _backup;
         private readonly ListaService _listaService;
 
-        private readonly AtualizadorService _atualizador = new AtualizadorService();
         private bool _checkedUpdateAtStartup = false;
 
         private string _sourceFolderPath = string.Empty;
@@ -288,7 +287,8 @@ namespace leituraWPF
         {
             try
             {
-                var check = await _atualizador.CheckForUpdatesAsync();
+                var updater = new ExternalUpdateService();
+                var check = await updater.CheckForUpdatesAsync();
                 if (!check.Success || !check.UpdateAvailable) return;
 
                 var prompt = new UpdatePromptWindow(
@@ -302,7 +302,7 @@ namespace leituraWPF
 
                 if (result != false)
                 {
-                    var update = await _atualizador.PerformUpdateAsync();
+                    var update = await updater.PerformUpdateAsync();
                     if (!update.Success)
                     {
                         Log($"[WARN] Falha ao atualizar: {update.Message}");
