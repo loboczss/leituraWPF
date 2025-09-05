@@ -679,7 +679,19 @@ namespace leituraWPF
                 txtLog.ScrollToEnd();
                 if (GridLog.Items.Count > 0) GridLog.ScrollIntoView(GridLog.Items[GridLog.Items.Count - 1]);
             }
-            if (Dispatcher.CheckAccess()) Append(); else Dispatcher.Invoke(Append);
+
+            // Evita exceções quando a aplicação está sendo finalizada
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+                return;
+
+            try
+            {
+                if (Dispatcher.CheckAccess()) Append(); else Dispatcher.Invoke(Append);
+            }
+            catch (TaskCanceledException)
+            {
+                // O Dispatcher foi finalizado; ignorar logs pendentes
+            }
         }
 
         public void Report(double value)
