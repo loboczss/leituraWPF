@@ -2,6 +2,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using leituraWPF;
 // Evitar colisões com WPF:
 // (não use "using System.Windows;" direto aqui)
 using WpfApp = System.Windows.Application;
@@ -123,15 +124,11 @@ namespace leituraWPF.Services
                     }
                     catch { /* ignore */ }
 
-                    var win = new UpdatePromptWindow(
+                    return Program.TryShowUpdatePrompt(
                         check.LocalVersion ?? new Version(0, 0),
                         check.RemoteVersion ?? new Version(0, 0),
+                        owner,
                         timeoutSeconds: 30);
-
-                    if (owner != null) win.Owner = owner;
-
-                    bool? dlg = win.ShowDialog();
-                    return dlg == true;
                 });
 
                 if (!wantsUpdate) return;
