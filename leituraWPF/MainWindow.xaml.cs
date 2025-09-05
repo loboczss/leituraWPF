@@ -78,6 +78,8 @@ namespace leituraWPF
             _backup = backupService ?? new BackupUploaderService(Program.Config, _tokenService);
             _listaService = new ListaService(Program.Config, _tokenService);
 
+            // Garante que o serviço de upload esteja sempre ativo
+            _backup.Start();
 
             _renamer.FileReadyForBackup += async p => await _backup.EnqueueAsync(p);
             _installRenamer.FileReadyForBackup += async p => await _backup.EnqueueAsync(p);
@@ -138,12 +140,10 @@ namespace leituraWPF
                 });
             };
 
-
             if (backupService == null)
-
             {
+                // quando criado internamente, carregar pendentes em segundo plano
                 _ = _backup.LoadPendingFromBaseDirsAsync();
-                _backup.Start();
             }
 
             // inicia sincronização automática a cada 10 minutos (cancelável)

@@ -103,12 +103,17 @@ namespace leituraWPF
                 backup = new BackupUploaderService(Config, tokenService);
                 BackupInstance = backup;
 
+                // Inicia imediatamente o serviço de upload para que
+                // funcione desde a tela de login
+                backup.Start();
+
+                // Carrega os arquivos pendentes em segundo plano sem
+                // bloquear a inicialização da aplicação
                 _ = Task.Run(async () =>
                 {
                     try
                     {
                         await backup.LoadPendingFromBaseDirsAsync();
-                        backup.Start();
                     }
                     catch
                     {
