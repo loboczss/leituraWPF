@@ -281,6 +281,26 @@ namespace leituraWPF
                 Debug.WriteLine($"Erro ao atualizar contadores: {ex.Message}");
             }
         }
+
+        private async void RetryErrors_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _backup.RetryErrorsAsync();
+                await RefreshCollectionsAsync();
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    _errors.Clear();
+                }, DispatcherPriority.Background);
+
+                await _backup.ForceRunOnceAsync();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Erro ao reenviar arquivos: {ex.Message}");
+            }
+        }
         #endregion
 
         #region Private Methods

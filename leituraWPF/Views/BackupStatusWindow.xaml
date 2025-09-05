@@ -431,11 +431,20 @@
                             <!-- Lista Erros -->
                             <StackPanel Grid.Column="2" Margin="8,0,0,0">
                                 <Border Background="{StaticResource RedLight}" CornerRadius="8" Padding="12,8" Margin="0,0,0,12">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="❌" FontSize="16" Margin="0,0,8,0"/>
-                                        <TextBlock Text="Arquivos com Erro" FontWeight="SemiBold" FontSize="14" 
-                                                   Foreground="{StaticResource TextDark}"/>
-                                    </StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" Grid.Column="0">
+                                            <TextBlock Text="❌" FontSize="16" Margin="0,0,8,0"/>
+                                            <TextBlock Text="Arquivos com Erro" FontWeight="SemiBold" FontSize="14"
+                                                       Foreground="{StaticResource TextDark}"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="↻ Reenviar" Style="{StaticResource ModernButton}"
+                                                Background="{StaticResource ErrorRed}" Margin="12,0,0,0"
+                                                Click="RetryErrors_Click"/>
+                                    </Grid>
                                 </Border>
                                 <ScrollViewer Height="300" VerticalScrollBarVisibility="Auto">
                                     <ItemsControl x:Name="ErrorList">
