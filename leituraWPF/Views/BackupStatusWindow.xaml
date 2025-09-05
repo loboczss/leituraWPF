@@ -563,18 +563,25 @@
                                         <DataGrid x:Name="HistoryErrorList" ItemsSource="{Binding HistoryErrors}"
                                                   AutoGenerateColumns="False" IsReadOnly="True" MinHeight="300">
                                             <DataGrid.Columns>
-                                                <DataGridTextColumn Header="📅 Data" 
-                                                    Binding="{Binding CompletedAt, StringFormat={}{0:dd/MM/yyyy HH:mm}}" 
+                                                <DataGridTextColumn Header="📅 Data"
+                                                    Binding="{Binding CompletedAt, StringFormat={}{0:dd/MM/yyyy HH:mm}}"
                                                     Width="140"/>
                                                 <DataGridTextColumn Header="📄 Arquivo" Binding="{Binding FileName}" Width="*"/>
-                                                <DataGridTemplateColumn Header="🔧 Ação" Width="80">
+                                                <DataGridTemplateColumn Header="🔧 Ação" Width="120">
                                                     <DataGridTemplateColumn.CellTemplate>
                                                         <DataTemplate>
-                                                            <Button Content="📂" Tag="{Binding FilePath}" 
-                                                                    Click="OpenFileLocation_Click" 
-                                                                    Style="{StaticResource ModernButton}"
-                                                                    Width="28" Height="28" Padding="0"
-                                                                    ToolTip="Abrir localização"/>
+                                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                                <Button Content="↻" Tag="{Binding FilePath}"
+                                                                        Click="RetryHistory_Click"
+                                                                        Style="{StaticResource ModernButton}"
+                                                                        Width="28" Height="28" Padding="0"
+                                                                        ToolTip="Reenviar" Margin="0,0,8,0"/>
+                                                                <Button Content="📂" Tag="{Binding FilePath}"
+                                                                        Click="OpenFileLocation_Click"
+                                                                        Style="{StaticResource ModernButton}"
+                                                                        Width="28" Height="28" Padding="0"
+                                                                        ToolTip="Abrir localização"/>
+                                                            </StackPanel>
                                                         </DataTemplate>
                                                     </DataGridTemplateColumn.CellTemplate>
                                                 </DataGridTemplateColumn>
