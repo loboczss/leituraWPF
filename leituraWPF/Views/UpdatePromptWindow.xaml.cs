@@ -7,9 +7,10 @@ namespace leituraWPF
     public partial class UpdatePromptWindow : Window
     {
         private readonly DispatcherTimer _timer;
+        private readonly int _totalSeconds;
         private int _seconds;
 
-        public UpdatePromptWindow(Version local, Version remote, int timeoutSeconds = 60)
+        public UpdatePromptWindow(Version local, Version remote, int timeoutSeconds = 30)
         {
             InitializeComponent();
 
@@ -17,6 +18,8 @@ namespace leituraWPF
             LblRemoteVer.Text = remote?.ToString() ?? "-";
 
             _seconds = Math.Max(5, timeoutSeconds); // pequena proteção
+            _totalSeconds = _seconds;
+            AutoProgressBar.Maximum = _totalSeconds;
             UpdateCountdownText();
 
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -39,6 +42,7 @@ namespace leituraWPF
         private void UpdateCountdownText()
         {
             TxtAuto.Text = $"A atualização iniciará automaticamente em {_seconds}s...";
+            AutoProgressBar.Value = _totalSeconds - _seconds;
         }
 
         private void BtnNow_Click(object sender, RoutedEventArgs e)

@@ -294,7 +294,7 @@ namespace leituraWPF
                 var prompt = new UpdatePromptWindow(
                     check.LocalVersion ?? new Version(0, 0),
                     check.RemoteVersion ?? new Version(0, 0),
-                    timeoutSeconds: 60)
+                    timeoutSeconds: 30)
                 {
                     Owner = this
                 };
