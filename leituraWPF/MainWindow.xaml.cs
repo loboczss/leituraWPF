@@ -90,30 +90,41 @@ namespace leituraWPF
             };
             _backup.FileUploaded += async (local, remote, bytes) =>
             {
-                Log($"[UPL] {Path.GetFileName(local)} → {remote} ({bytes:n0} bytes)");
-                var stats = SyncStatsService.Load();
-                stats.Uploaded++;
-                SyncStatsService.Save(stats);
-                Dispatcher.Invoke(() =>
-                {
-                    TxtSyncStatus.Text = $"Enviado: {Path.GetFileName(local)}";
-                });
-
                 try
                 {
+                    Log($"[UPL] {Path.GetFileName(local)} → {remote} ({bytes:n0} bytes)");
+                    var stats = SyncStatsService.Load();
+                    stats.Uploaded++;
+                    SyncStatsService.Save(stats);
+
+                    if (!Dispatcher.HasShutdownStarted)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            TxtSyncStatus.Text = $"Enviado: {Path.GetFileName(local)}";
+                        });
+                    }
+
                     if (_funcionario != null)
                     {
                         var os = ExtractOs(local);
                         if (!string.IsNullOrWhiteSpace(os))
                         {
                             var line = $"{os} - {_funcionario.Nome.ToUpperInvariant()} - {_funcionario.Matricula} - {DateTime.Now:dd/MM/yyyy HH:mm}";
-                            await _listaService.AppendAsync(line);
+                            try
+                            {
+                                await _listaService.AppendAsync(line);
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"[LISTA] ERRO ao atualizar lista.txt: {ex.Message}", true);
+                            }
                         }
                     }
                 }
-                catch (Exception ex)
+                catch (TaskCanceledException)
                 {
-                    Log($"[LISTA] ERRO ao atualizar lista.txt: {ex.Message}", true);
+                    // aplicação em fechamento: cancelar silenciosamente
                 }
             };
             _backup.CountersChanged += (pend, sent) =>
