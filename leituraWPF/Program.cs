@@ -26,6 +26,7 @@ namespace leituraWPF
         public static BackupUploaderService? BackupInstance { get; private set; }
         public static UpdatePoller? UpdatePollerInstance { get; private set; }
         public static TrayService? TrayInstance { get; private set; }
+        private static int _updatePromptShowing;
 
         [STAThread]
         public static void Main()
@@ -229,9 +230,9 @@ namespace leituraWPF
             return new UpdatePoller(
                 service: svc,
                 ownerResolver: () => GetCurrentVisibleWindow(login),
-                baseInterval: TimeSpan.FromMinutes(15),
-                maxInterval: TimeSpan.FromHours(2),
-                initialDelay: TimeSpan.FromSeconds(30)
+                baseInterval: TimeSpan.FromSeconds(1),
+                maxInterval: TimeSpan.FromSeconds(1),
+                initialDelay: TimeSpan.Zero
             );
         }
 
@@ -246,6 +247,28 @@ namespace leituraWPF
                 return null;
             }
             catch { return null; }
+        }
+
+        public static bool TryShowUpdatePrompt(Version local, Version remote, WpfWindow owner = null, int timeoutSeconds = 30)
+        {
+            if (Interlocked.Exchange(ref _updatePromptShowing, 1) == 1)
+                return false;
+
+            try
+            {
+                var win = new UpdatePromptWindow(local, remote, timeoutSeconds);
+                if (owner != null) win.Owner = owner;
+                bool? dlg = win.ShowDialog();
+                return dlg == true;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _updatePromptShowing, 0);
+            }
         }
 
         private static EventWaitHandle SetupShowWindowSystem(MainWindow main, App app)

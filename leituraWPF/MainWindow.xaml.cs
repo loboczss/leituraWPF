@@ -302,16 +302,13 @@ namespace leituraWPF
                 var check = await updater.CheckForUpdatesAsync();
                 if (!check.Success || !check.UpdateAvailable) return;
 
-                var prompt = new UpdatePromptWindow(
+                var wantsUpdate = Program.TryShowUpdatePrompt(
                     check.LocalVersion ?? new Version(0, 0),
                     check.RemoteVersion ?? new Version(0, 0),
-                    timeoutSeconds: 30)
-                {
-                    Owner = this
-                };
-                var result = prompt.ShowDialog();
+                    this,
+                    timeoutSeconds: 30);
 
-                if (result != false)
+                if (wantsUpdate)
                 {
                     var update = await updater.PerformUpdateAsync();
                     if (!update.Success)
