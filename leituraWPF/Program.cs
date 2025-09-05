@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -80,6 +81,7 @@ namespace leituraWPF
         {
             try { StartupService.ConfigureStartup(); } catch { }
 
+            EnsureVersionFile();
             LoadConfiguration();
 
             var tokenService = new TokenService(Config);
@@ -291,6 +293,26 @@ namespace leituraWPF
                     {
                     }
                 });
+            }
+            catch
+            {
+            }
+        }
+
+        private static void EnsureVersionFile()
+        {
+            try
+            {
+                var asmVersion = Assembly.GetExecutingAssembly().GetName().Version;
+                if (asmVersion == null)
+                    return;
+
+                var current = $"v{asmVersion}";
+                var path = Path.Combine(AppContext.BaseDirectory, "version.txt");
+
+                var existing = File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
+                if (existing != current)
+                    File.WriteAllText(path, current);
             }
             catch
             {
