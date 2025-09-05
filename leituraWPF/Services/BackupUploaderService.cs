@@ -332,6 +332,48 @@ namespace leituraWPF.Services
             }
         }
 
+        public async Task<int> RetryErrorsAsync()
+        {
+            ThrowIfDisposed();
+
+            var moved = 0;
+
+            try
+            {
+                var files = Directory.EnumerateFiles(_errorDir, "*", SearchOption.AllDirectories)
+                    .Where(f => !f.EndsWith(".error", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                foreach (var file in files)
+                {
+                    var relative = Path.GetRelativePath(_errorDir, file);
+                    var destination = Path.Combine(_pendingDir, relative);
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+
+                    if (File.Exists(destination))
+                        File.Delete(destination);
+
+                    File.Move(file, destination);
+
+                    var errorInfo = file + ".error";
+                    if (File.Exists(errorInfo))
+                    {
+                        try { File.Delete(errorInfo); } catch { }
+                    }
+
+                    moved++;
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke($"[BACKUP] ERRO ao reenfileirar erros: {ex.Message}");
+            }
+
+            await UpdateCountersAsync();
+            return moved;
+        }
+
         public Task ForceRunOnceAsync(CancellationToken ct = default) => RunCycleAsync(ct);
 
         private async Task RunCycleAsync(CancellationToken ct = default)
