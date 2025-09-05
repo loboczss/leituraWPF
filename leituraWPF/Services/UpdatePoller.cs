@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using WpfApp = System.Windows.Application;
 using WpfWindow = System.Windows.Window;
 using ThreadingTimer = System.Threading.Timer;
+using leituraWPF;
 
 namespace leituraWPF.Services
 {
@@ -115,6 +116,9 @@ namespace leituraWPF.Services
 
                 bool wantsUpdate = await dispatcher.InvokeAsync(() =>
                 {
+                    if (IsPromptOpen())
+                        return false;
+
                     WpfWindow owner = null;
                     try
                     {
@@ -164,6 +168,21 @@ namespace leituraWPF.Services
                 if (!_disposed)
                     ScheduleNext(offlineFailure);
             }
+        }
+
+        private static bool IsPromptOpen()
+        {
+            try
+            {
+                if (WpfApp.Current == null) return false;
+                foreach (WpfWindow w in WpfApp.Current.Windows)
+                {
+                    if (w is UpdatePromptWindow upw && upw.IsVisible)
+                        return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         private void ScheduleNext(bool wasFailure)
