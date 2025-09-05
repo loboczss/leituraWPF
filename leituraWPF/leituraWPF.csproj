@@ -6,11 +6,12 @@
 		<UseWindowsForms>true</UseWindowsForms>
 		<Version>1.0.0.7</Version>
 		<Nullable>enable</Nullable>
-		<ImplicitUsings>enable</ImplicitUsings>
-		<AssemblyName>leituraWPF</AssemblyName>
-		<!-- Escolhe Program.Main como ponto de entrada -->
-		<StartupObject>leituraWPF.Program</StartupObject>
-	</PropertyGroup>
+                <ImplicitUsings>enable</ImplicitUsings>
+                <AssemblyName>leituraWPF</AssemblyName>
+                <!-- Escolhe Program.Main como ponto de entrada -->
+                <StartupObject>leituraWPF.Program</StartupObject>
+                <ApplicationIcon>bin\Debug\net8.0-windows\ico-app.ico</ApplicationIcon>
+        </PropertyGroup>
 
 	<ItemGroup>
 		<Content Include="bin\Debug\net8.0-windows\ico-app.ico" />
@@ -29,46 +30,5 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
-
-	<!-- ========= INTEGRAÇÃO COM UPDATERHOST ========= -->
-	<!-- 1) Referência de projeto (garante build antes do app).
-         Ajuste o caminho se sua solução tiver outra estrutura -->
-	<ItemGroup>
-		<ProjectReference Include="..\UpdaterHost\UpdaterHost.csproj" ReferenceOutputAssembly="false" />
-	</ItemGroup>
-
-	<!-- 2) Caminho de saída do UpdaterHost (assumindo net8.0-windows).
-         Se seu UpdaterHost tiver outro TFM, troque aqui. -->
-	<PropertyGroup>
-		<UpdaterHostTFM>net8.0-windows</UpdaterHostTFM>
-		<UpdaterHostOutDir>$(MSBuildProjectDirectory)\..\UpdaterHost\bin\$(Configuration)\$(UpdaterHostTFM)\</UpdaterHostOutDir>
-		<ApplicationIcon>bin\Debug\net8.0-windows\ico-app.ico</ApplicationIcon>
-	</PropertyGroup>
-
-	<!-- 3) Copia o UpdaterHost para a pasta do app no Build -->
-	<Target Name="CopyUpdaterHostAfterBuild" AfterTargets="Build">
-		<ItemGroup>
-			<_HostFiles Include="$(UpdaterHostOutDir)UpdaterHost.exe" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.exe')" />
-			<_HostFiles Include="$(UpdaterHostOutDir)UpdaterHost.dll" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.dll')" />
-			<_HostFiles Include="$(UpdaterHostOutDir)UpdaterHost.deps.json" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.deps.json')" />
-			<_HostFiles Include="$(UpdaterHostOutDir)UpdaterHost.runtimeconfig.json" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.runtimeconfig.json')" />
-			<_HostFiles Include="$(UpdaterHostOutDir)UpdaterHost.exe.config" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.exe.config')" />
-			<_HostFiles Include="$(UpdaterHostOutDir)UpdaterHost.pdb" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.pdb')" />
-		</ItemGroup>
-		<Copy SourceFiles="@(_HostFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
-	</Target>
-
-	<!-- 4) Copia o UpdaterHost para a pasta de Publish -->
-	<Target Name="CopyUpdaterHostOnPublish" AfterTargets="Publish">
-		<ItemGroup>
-			<_HostFilesPub Include="$(UpdaterHostOutDir)UpdaterHost.exe" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.exe')" />
-			<_HostFilesPub Include="$(UpdaterHostOutDir)UpdaterHost.dll" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.dll')" />
-			<_HostFilesPub Include="$(UpdaterHostOutDir)UpdaterHost.deps.json" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.deps.json')" />
-			<_HostFilesPub Include="$(UpdaterHostOutDir)UpdaterHost.runtimeconfig.json" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.runtimeconfig.json')" />
-			<_HostFilesPub Include="$(UpdaterHostOutDir)UpdaterHost.exe.config" Condition="Exists('$(UpdaterHostOutDir)UpdaterHost.exe.config')" />
-		</ItemGroup>
-		<Copy SourceFiles="@(_HostFilesPub)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
-	</Target>
-	<!-- ========= FIM INTEGRAÇÃO UPDATERHOST ========= -->
 
 </Project>

@@ -56,7 +56,7 @@ namespace leituraWPF.Services
         private int _failureCount;      // falhas consecutivas (para backoff)
         private volatile bool _disposed;
 
-        /// <param name="service">Serviço de atualização (ex.: SelfUpdateService).</param>
+        /// <param name="service">Serviço de atualização utilizado pelo poller.</param>
         /// <param name="ownerResolver">Resolve a janela dona do prompt (Login ou Main).</param>
         /// <param name="baseInterval">Intervalo base (padrão 10 minutos).</param>
         /// <param name="maxInterval">Intervalo máximo (padrão 1 hora).</param>
@@ -136,7 +136,7 @@ namespace leituraWPF.Services
 
                 if (!wantsUpdate) return;
 
-                // 4) Executa a atualização (SelfUpdateService dispara o UpdaterHost e devolve)
+                // 4) Executa a atualização (abre o AtualizaAPP.exe)
                 var update = await _service.PerformUpdateAsync().ConfigureAwait(false);
                 if (!update.Success)
                 {
@@ -144,7 +144,7 @@ namespace leituraWPF.Services
                     return;
                 }
 
-                // 5) Fecha o app (UpdaterHost substitui arquivos e relança)
+                // 5) Fecha o app para que o AtualizaAPP.exe prossiga
                 await dispatcher.InvokeAsync(() => WpfApp.Current.Shutdown());
             }
             catch

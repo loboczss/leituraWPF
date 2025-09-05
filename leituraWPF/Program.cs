@@ -82,35 +82,6 @@ namespace leituraWPF
 
             LoadConfiguration();
 
-            // Sucesso pós-update (usa SelfUpdateService)
-            try
-            {
-                var flag = SelfUpdateService.UpdateSuccessMarkerPath;
-                if (File.Exists(flag))
-                {
-                    var info = File.ReadAllText(flag).Trim();
-                    File.Delete(flag);
-
-                    string message = "Aplicativo atualizado com sucesso!";
-                    if (!string.IsNullOrWhiteSpace(info))
-                    {
-                        var parts = info.Split('|');
-                        if (parts.Length >= 2)
-                        {
-                            message += $"\nVersão anterior: {parts[0]}";
-                            message += $"\nVersão atual: {parts[1]}";
-                        }
-                    }
-
-                    System.Windows.MessageBox.Show(
-                        message,
-                        "Atualização",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                }
-            }
-            catch { }
-
             var tokenService = new TokenService(Config);
             var funcService = new FuncionarioService(Config, tokenService);
 
@@ -144,7 +115,7 @@ namespace leituraWPF
 
                 var login = new LoginWindow(funcService, backup);
 
-                // Poller com SelfUpdateService (gerenciado, sem shell)
+                // Poller com serviço externo de atualização
                 updatePoller = CreateUpdatePoller(login);
 
                 var loginResult = login.ShowDialog();
@@ -238,7 +209,7 @@ namespace leituraWPF
 
         private static UpdatePoller CreateUpdatePoller(LoginWindow login)
         {
-            IUpdateService svc = new SelfUpdateService(new DefaultLogger());
+            IUpdateService svc = new ExternalUpdateService();
 
             return new UpdatePoller(
                 service: svc,
