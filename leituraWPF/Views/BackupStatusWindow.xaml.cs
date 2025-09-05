@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -141,10 +142,15 @@ namespace leituraWPF
                 await Dispatcher.InvokeAsync(() =>
                 {
                     CurrentStatusText = "Carregando arquivos...";
-                    RefreshCollections();
-                    LoadHistory();
-                    UpdateProgress();
-                    UpdateCounters();
+                });
+
+                await RefreshCollectionsAsync();
+                await LoadHistoryAsync();
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    UpdateProgress(_pending.Count, _sent.Count, _errors.Count);
+                    UpdateCounters(_pending.Count, _sent.Count, _errors.Count);
                 });
             }
             catch (OperationCanceledException)
@@ -207,10 +213,10 @@ namespace leituraWPF
                         });
                     }
 
-                    UpdateProgress();
-                    UpdateCounters();
-                    LoadHistory();
+                    UpdateProgress(_pending.Count, _sent.Count, _errors.Count);
+                    UpdateCounters(_pending.Count, _sent.Count, _errors.Count);
                 }, DispatcherPriority.Background);
+                _ = LoadHistoryAsync();
             }
             catch (Exception ex)
             {
@@ -245,10 +251,10 @@ namespace leituraWPF
                         });
                     }
 
-                    UpdateProgress();
-                    UpdateCounters();
-                    LoadHistory();
+                    UpdateProgress(_pending.Count, _sent.Count, _errors.Count);
+                    UpdateCounters(_pending.Count, _sent.Count, _errors.Count);
                 }, DispatcherPriority.Background);
+                _ = LoadHistoryAsync();
             }
             catch (Exception updateEx)
             {
@@ -260,12 +266,14 @@ namespace leituraWPF
         {
             try
             {
+                var refreshTask = RefreshCollectionsAsync();
+                var historyTask = LoadHistoryAsync();
+                await Task.WhenAll(refreshTask, historyTask);
+
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    RefreshCollections();
-                    LoadHistory();
-                    UpdateProgress();
-                    UpdateCounters();
+                    UpdateProgress(pending, uploaded, error);
+                    UpdateCounters(pending, uploaded, error);
                 }, DispatcherPriority.Background);
             }
             catch (Exception ex)
@@ -276,65 +284,96 @@ namespace leituraWPF
         #endregion
 
         #region Private Methods
-        private void RefreshCollections()
+        private async Task RefreshCollectionsAsync()
         {
             try
             {
-                // Atualiza pendentes
-                _pending.Clear();
-                var pendingFiles = _backup.GetPendingFiles();
-                foreach (var filePath in pendingFiles)
+                var pendingItems = await Task.Run(() =>
                 {
-                    var fileName = Path.GetFileName(filePath);
-                    var fileInfo = new FileInfo(filePath);
-
-                    _pending.Add(new BackupItem
+                    var list = new List<BackupItem>();
+                    foreach (var filePath in _backup.GetPendingFiles())
                     {
-                        FileName = fileName,
-                        Size = FormatFileSize(fileInfo.Length),
-                        FilePath = filePath
-                    });
-                }
+                        var fileName = Path.GetFileName(filePath);
+                        var fileInfo = new FileInfo(filePath);
+                        list.Add(new BackupItem
+                        {
+                            FileName = fileName,
+                            Size = FormatFileSize(fileInfo.Length),
+                            FilePath = filePath
+                        });
+                    }
+                    return list;
+                });
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    _pending.Clear();
+                    foreach (var item in pendingItems)
+                    {
+                        _pending.Add(item);
+                    }
+                }, DispatcherPriority.Background);
             }
             catch (Exception ex)
             {
-                CurrentStatusText = $"Erro ao atualizar listas: {ex.Message}";
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    CurrentStatusText = $"Erro ao atualizar listas: {ex.Message}";
+                });
                 Debug.WriteLine($"Erro em RefreshCollections: {ex}");
             }
         }
 
-        private void LoadHistory()
+        private async Task LoadHistoryAsync()
         {
             try
             {
-                _historySent.Clear();
-                var sentFiles = _backup.GetSentFiles()
-                    .OrderByDescending(f => File.GetLastWriteTime(f));
-                foreach (var filePath in sentFiles)
+                var sentItemsTask = Task.Run(() =>
                 {
-                    var info = new FileInfo(filePath);
-                    _historySent.Add(new BackupItem
-                    {
-                        FileName = GetDisplayName(filePath),
-                        CompletedAt = info.LastWriteTime,
-                        FilePath = filePath
-                    });
-                }
+                    return _backup.GetSentFiles()
+                        .OrderByDescending(f => File.GetLastWriteTime(f))
+                        .Select(filePath =>
+                        {
+                            var info = new FileInfo(filePath);
+                            return new BackupItem
+                            {
+                                FileName = GetDisplayName(filePath),
+                                CompletedAt = info.LastWriteTime,
+                                FilePath = filePath
+                            };
+                        }).ToList();
+                });
 
-                _historyErrors.Clear();
-                var errorFiles = _backup.GetErrorFiles()
-                    .Where(f => !f.EndsWith(".error", StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(f => File.GetLastWriteTime(f));
-                foreach (var filePath in errorFiles)
+                var errorItemsTask = Task.Run(() =>
                 {
-                    var info = new FileInfo(filePath);
-                    _historyErrors.Add(new BackupItem
-                    {
-                        FileName = GetDisplayName(filePath),
-                        CompletedAt = info.LastWriteTime,
-                        FilePath = filePath
-                    });
-                }
+                    return _backup.GetErrorFiles()
+                        .Where(f => !f.EndsWith(".error", StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(f => File.GetLastWriteTime(f))
+                        .Select(filePath =>
+                        {
+                            var info = new FileInfo(filePath);
+                            return new BackupItem
+                            {
+                                FileName = GetDisplayName(filePath),
+                                CompletedAt = info.LastWriteTime,
+                                FilePath = filePath
+                            };
+                        }).ToList();
+                });
+
+                var sentItems = await sentItemsTask;
+                var errorItems = await errorItemsTask;
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    _historySent.Clear();
+                    foreach (var item in sentItems)
+                        _historySent.Add(item);
+
+                    _historyErrors.Clear();
+                    foreach (var item in errorItems)
+                        _historyErrors.Add(item);
+                }, DispatcherPriority.Background);
             }
             catch (Exception ex)
             {
@@ -342,32 +381,33 @@ namespace leituraWPF
             }
         }
 
-        private void UpdateProgress()
+        private void UpdateProgress(long pending, long uploaded, long error)
         {
             try
             {
-                var total = _pending.Count + _sent.Count + _errors.Count;
-                var completed = _sent.Count + _errors.Count;
+                var total = pending + uploaded + error;
+                var completed = uploaded + error;
 
                 if (total == 0)
                 {
                     ProgressBar.Value = 0;
                     ProgressText.Text = "0%";
+                    MainProgress.Text = "0%";
                     return;
                 }
 
                 double percent = (completed * 100.0) / total;
                 ProgressBar.Value = Math.Min(percent, 100);
                 ProgressText.Text = $"{percent:F1}%";
+                MainProgress.Text = $"{percent:F1}%";
 
-                // Verifica se completou
                 if (completed == total && total > 0)
                 {
                     IsCompleted = true;
                     _stopwatch.Stop();
-                    CurrentStatusText = _errors.Any() ?
-                        $"Backup concluído com {_errors.Count} erro(s)" :
-                        "Backup concluído com sucesso!";
+                    CurrentStatusText = error > 0
+                        ? $"Backup concluído com {error} erro(s)"
+                        : "Backup concluído com sucesso!";
                 }
             }
             catch (Exception ex)
@@ -376,13 +416,13 @@ namespace leituraWPF
             }
         }
 
-        private void UpdateCounters()
+        private void UpdateCounters(long pending, long uploaded, long error)
         {
             try
             {
-                PendingCount.Text = $"{_pending.Count} Pendente{(_pending.Count != 1 ? "s" : "")}";
-                SentCount.Text = $"{_sent.Count} Enviado{(_sent.Count != 1 ? "s" : "")}";
-                ErrorCount.Text = $"{_errors.Count} Erro{(_errors.Count != 1 ? "s" : "")}";
+                PendingCount.Text = $"{pending} Pendente{(pending != 1 ? "s" : "")}";
+                SentCount.Text = $"{uploaded} Enviado{(uploaded != 1 ? "s" : "")}";
+                ErrorCount.Text = $"{error} Erro{(error != 1 ? "s" : "")}";
             }
             catch (Exception ex)
             {
