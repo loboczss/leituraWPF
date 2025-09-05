@@ -138,8 +138,8 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ProgressBar">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="6">
-                            <Border Name="PART_Indicator" 
+                        <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="6">
+                            <Border x:Name="PART_Indicator"
                                     Background="{StaticResource PrimaryBlue}"
                                     HorizontalAlignment="Left"
                                     CornerRadius="6"/>
