@@ -230,13 +230,17 @@
                            Margin="0,0,0,12"/>
 
                 <!-- Status de Auto-atualização -->
-                <Border Background="#fff3cd" BorderBrush="#ffeaa7" BorderThickness="1" 
+                <Border Background="#fff3cd" BorderBrush="#ffeaa7" BorderThickness="1"
                         CornerRadius="8" Padding="12,8" Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="⏱️" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock x:Name="TxtAuto" Text="A atualização será aplicada automaticamente"
-                                   FontSize="13" Foreground="#856404" VerticalAlignment="Center"
-                                   FontStyle="Italic"/>
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⏱️" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="TxtAuto" Text="A atualização será aplicada automaticamente"
+                                       FontSize="13" Foreground="#856404" VerticalAlignment="Center"
+                                       FontStyle="Italic"/>
+                        </StackPanel>
+                        <ProgressBar x:Name="AutoProgressBar" Height="4" Margin="24,4,0,0" Minimum="0" Value="0"
+                                     Background="#ffeaa7" Foreground="#856404"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
