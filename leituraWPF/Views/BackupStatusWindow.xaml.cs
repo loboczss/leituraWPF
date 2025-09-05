@@ -301,6 +301,24 @@ namespace leituraWPF
                 Debug.WriteLine($"Erro ao reenviar arquivos: {ex.Message}");
             }
         }
+
+        private async void RetryHistory_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button btn && btn.Tag is string path)
+            {
+                try
+                {
+                    await _backup.RetryErrorAsync(path);
+                    await RefreshCollectionsAsync();
+                    await LoadHistoryAsync();
+                    await _backup.ForceRunOnceAsync();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Erro ao reenviar arquivo do histórico: {ex.Message}");
+                }
+            }
+        }
         #endregion
 
         #region Private Methods
