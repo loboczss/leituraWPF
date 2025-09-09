@@ -10,12 +10,13 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
-using leituraWPF.Utils;
+using leituraWPF.Utils; // <= usar AppConfig daqui
 
 namespace leituraWPF.Services
 {
     /// <summary>
     /// Gerencia o arquivo local processados.json e sincroniza com a lista SharePoint.
+    /// Versão reforçada: autodetecção de Site, checagem de colunas, logs detalhados e retry.
     /// </summary>
     public sealed class ProcessadosService
     {
@@ -23,6 +24,8 @@ namespace leituraWPF.Services
         private readonly TokenService _tokenService;
         private readonly HttpClient _http;
         private readonly string _filePath;
+        private readonly string _logPath;
+        private string? _siteSpecifier; // "sites/{id}" OU "sites/{host}:/sites/{path}:"
         private string? _listId;
         private readonly SemaphoreSlim _mutex = new(1, 1);
 
@@ -42,30 +45,29 @@ namespace leituraWPF.Services
             _tokenService = tokenService;
             _http = new HttpClient();
             _filePath = Path.Combine(AppContext.BaseDirectory, "processados.json");
+            _logPath = Path.Combine(AppContext.BaseDirectory, "processados_sync.log");
         }
 
+        // ============ API pública ============
         public async Task AddAsync(string pasta, string usuario, IEnumerable<string> arquivos, string versao)
         {
             await _mutex.WaitAsync().ConfigureAwait(false);
             try
             {
                 var list = await LoadAsync().ConfigureAwait(false);
-                var arr = arquivos.ToList();
+                var arr = arquivos?.ToList() ?? new List<string>();
                 list.Add(new Entry
                 {
-                    Pasta = pasta,
-                    Usuario = usuario,
+                    Pasta = pasta ?? string.Empty,
+                    Usuario = usuario ?? string.Empty,
                     Arquivos = arr,
                     Quantidade = arr.Count,
-                    Versao = versao,
+                    Versao = versao ?? string.Empty,
                     Sincronizado = false
                 });
                 await SaveAsync(list).ConfigureAwait(false);
             }
-            finally
-            {
-                _mutex.Release();
-            }
+            finally { _mutex.Release(); }
         }
 
         public async Task TrySyncAsync()
@@ -75,53 +77,75 @@ namespace leituraWPF.Services
             {
                 var list = await LoadAsync().ConfigureAwait(false);
                 var pendentes = list.Where(e => !e.Sincronizado).ToList();
-                if (pendentes.Count == 0) return;
-
-                try
+                if (pendentes.Count == 0)
                 {
-                    var listId = await ResolveListIdAsync().ConfigureAwait(false);
-                    if (string.IsNullOrEmpty(listId)) return;
+                    await LogAsync("Nada a sincronizar.").ConfigureAwait(false);
+                    return;
+                }
 
-                    var token = await _tokenService.GetTokenAsync().ConfigureAwait(false);
-                    _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                    _http.DefaultRequestHeaders.Accept.Clear();
-                    _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                await PrepareGraphClientAsync().ConfigureAwait(false);
 
-                    await EnsureColumnsAsync(listId).ConfigureAwait(false);
+                var siteSpec = await ResolveSiteSpecifierAsync().ConfigureAwait(false);
+                if (siteSpec is null)
+                {
+                    await LogAsync("Falha ao resolver Site (SiteId/URL). Abandonando sync.").ConfigureAwait(false);
+                    return;
+                }
 
-                    var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{listId}/items";
+                var listId = await ResolveListIdAsync(siteSpec, _cfg.ProcessLogListName).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(listId))
+                {
+                    await LogAsync($"Lista '{_cfg.ProcessLogListName}' não encontrada nem criada.").ConfigureAwait(false);
+                    return;
+                }
+                _listId ??= listId;
 
-                    foreach (var item in pendentes)
+                // Teste rápido: cria item mínimo (só Title). Se falhar -> permissão/rota/tokens.
+                await ProbeCreateMinimalItemAsync(siteSpec, listId).ConfigureAwait(false);
+
+                // Garante colunas
+                await EnsureColumnsAsync(siteSpec, listId).ConfigureAwait(false);
+
+                string itemsUrl = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items";
+                int ok = 0, fail = 0;
+
+                foreach (var item in pendentes)
+                {
+                    var body = new
                     {
-                        var body = new
+                        fields = new Dictionary<string, object?>
                         {
-                            fields = new
-                            {
-                                Title = item.Pasta,
-                                Usuario = item.Usuario,
-                                Arquivos = string.Join(",", item.Arquivos),
-                                Quantidade = item.Quantidade,
-                                Versao = item.Versao
-                            }
-                        };
-                        using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-                        using var resp = await _http.PostAsync(url, content).ConfigureAwait(false);
-                        if (resp.IsSuccessStatusCode)
-                        {
-                            item.Sincronizado = true;
+                            ["Title"] = string.IsNullOrWhiteSpace(item.Pasta) ? "(vazio)" : item.Pasta,
+                            ["Usuario"] = item.Usuario,
+                            ["Arquivos"] = string.Join(",", item.Arquivos ?? new List<string>()),
+                            ["Quantidade"] = item.Quantidade,
+                            ["Versao"] = item.Versao
                         }
-                        else
-                        {
-                            break; // interrompe em caso de falha
-                        }
-                    }
+                    };
 
-                    await SaveAsync(list).ConfigureAwait(false);
+                    var payload = JsonSerializer.Serialize(body);
+                    var resp = await PostWithRetryAsync(itemsUrl, payload).ConfigureAwait(false);
+
+                    if (resp.success)
+                    {
+                        item.Sincronizado = true;
+                        ok++;
+                    }
+                    else
+                    {
+                        fail++;
+                        await LogAsync($"Falha ao criar item (Title='{item.Pasta}'). " +
+                                       $"HTTP {(int)resp.statusCode} {resp.statusCode}. Body={resp.body}")
+                            .ConfigureAwait(false);
+                    }
                 }
-                catch
-                {
-                    // mantém arquivo para próxima tentativa
-                }
+
+                await SaveAsync(list).ConfigureAwait(false);
+                await LogAsync($"Sync finalizado. OK={ok}, Falhas={fail}.").ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await LogAsync("TrySyncAsync EXCEPTION: " + ex).ConfigureAwait(false);
             }
             finally
             {
@@ -137,83 +161,242 @@ namespace leituraWPF.Services
                 using var resp = await client.GetAsync("https://graph.microsoft.com/v1.0/$metadata", HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
                 return resp.IsSuccessStatusCode || resp.StatusCode == HttpStatusCode.Unauthorized;
             }
-            catch
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
-        private async Task<string?> ResolveListIdAsync()
+        // ============ Infra/Privados ============
+
+        private async Task PrepareGraphClientAsync()
         {
-            if (!string.IsNullOrEmpty(_listId)) return _listId;
+            var token = await _tokenService.GetTokenAsync().ConfigureAwait(false);
+            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            _http.DefaultRequestHeaders.Accept.Clear();
+            _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        }
 
-            try
+        private async Task<string?> ResolveSiteSpecifierAsync()
+        {
+            if (!string.IsNullOrEmpty(_siteSpecifier))
+                return _siteSpecifier;
+
+            string raw = _cfg.SiteId?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(raw))
             {
-                var token = await _tokenService.GetTokenAsync().ConfigureAwait(false);
-                _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists?$filter=displayName eq '{_cfg.ProcessLogListName}'&$select=id";
-                var json = await _http.GetStringAsync(url).ConfigureAwait(false);
-                var obj = JsonNode.Parse(json)?.AsObject();
-                var arr = obj?["value"] as JsonArray;
-                var id = arr?.OfType<JsonObject>().FirstOrDefault()?["id"]?.ToString();
+                await LogAsync("AppConfig.SiteId vazio.").ConfigureAwait(false);
+                return null;
+            }
 
-                if (string.IsNullOrEmpty(id))
+            if (raw.Contains(":/sites/", StringComparison.OrdinalIgnoreCase))
+            {
+                _siteSpecifier = $"sites/{raw.TrimStart('/')}";
+                return _siteSpecifier;
+            }
+
+            if (raw.Contains(","))
+            {
+                _siteSpecifier = $"sites/{raw}";
+                return _siteSpecifier;
+            }
+
+            if (raw.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                try
                 {
-                    var body = new
+                    var uri = new Uri(raw);
+                    var host = uri.Host;
+                    var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    int idxSites = Array.FindIndex(segments, s => s.Equals("sites", StringComparison.OrdinalIgnoreCase));
+                    if (idxSites >= 0 && idxSites + 1 < segments.Length)
                     {
-                        displayName = _cfg.ProcessLogListName,
-                        list = new { template = "genericList" }
-                    };
+                        var sitePath = string.Join('/', segments.Skip(idxSites + 1));
+                        _siteSpecifier = $"sites/{host}:/sites/{sitePath}:";
+                        return _siteSpecifier;
+                    }
 
-                    using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-                    using var resp = await _http.PostAsync($"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists", content).ConfigureAwait(false);
-                    if (resp.IsSuccessStatusCode)
+                    var search = await _http.GetStringAsync($"https://graph.microsoft.com/v1.0/sites?search={Uri.EscapeDataString(uri.AbsoluteUri)}")
+                                            .ConfigureAwait(false);
+                    var id = JsonNode.Parse(search)?["value"]?.AsArray()?.OfType<JsonObject>()
+                                      ?.FirstOrDefault()?["id"]?.ToString();
+                    if (!string.IsNullOrEmpty(id))
                     {
-                        var created = JsonNode.Parse(await resp.Content.ReadAsStringAsync().ConfigureAwait(false))?.AsObject();
-                        id = created?["id"]?.ToString();
+                        _siteSpecifier = $"sites/{id}";
+                        return _siteSpecifier;
                     }
                 }
-
-                _listId = id;
-                return id;
+                catch (Exception ex)
+                {
+                    await LogAsync("ResolveSiteSpecifier (URL) EXCEPTION: " + ex).ConfigureAwait(false);
+                    return null;
+                }
             }
-            catch
+
+            _siteSpecifier = $"sites/{raw}";
+            return _siteSpecifier;
+        }
+
+        private async Task<string?> ResolveListIdAsync(string siteSpec, string listDisplayName)
+        {
+            try
             {
+                var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists?$select=id,displayName";
+                var json = await _http.GetStringAsync(url).ConfigureAwait(false);
+                var arr = JsonNode.Parse(json)?["value"]?.AsArray();
+
+                var match = arr?.OfType<JsonObject>()
+                    .FirstOrDefault(o => string.Equals(o?["displayName"]?.ToString(), listDisplayName, StringComparison.OrdinalIgnoreCase));
+
+                if (match is not null)
+                    return match["id"]?.ToString();
+
+                var createBody = new
+                {
+                    displayName = listDisplayName,
+                    list = new { template = "genericList" }
+                };
+                var payload = JsonSerializer.Serialize(createBody);
+                var resp = await _http.PostAsync($"https://graph.microsoft.com/v1.0/{siteSpec}/lists",
+                                                 new StringContent(payload, Encoding.UTF8, "application/json"))
+                                      .ConfigureAwait(false);
+
+                var bodyText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    await LogAsync($"Falha ao criar lista '{listDisplayName}'. HTTP {(int)resp.StatusCode} {resp.StatusCode}. Body={bodyText}")
+                        .ConfigureAwait(false);
+                    return null;
+                }
+
+                var created = JsonNode.Parse(bodyText)?.AsObject();
+                return created?["id"]?.ToString();
+            }
+            catch (Exception ex)
+            {
+                await LogAsync("ResolveListIdAsync EXCEPTION: " + ex).ConfigureAwait(false);
                 return null;
             }
         }
 
-        private async Task EnsureColumnsAsync(string listId)
+        private async Task EnsureColumnsAsync(string siteSpec, string listId)
         {
             try
             {
-                var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{listId}/columns?$select=name";
+                var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/columns?$select=id,name,displayName";
                 var json = await _http.GetStringAsync(url).ConfigureAwait(false);
-                var existing = JsonNode.Parse(json)?["value"]?.AsArray()?
-                    .OfType<JsonObject>().Select(n => n?["name"]?.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase)
-                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var existing = (JsonNode.Parse(json)?["value"]?.AsArray() ?? new JsonArray())
+                    .OfType<JsonObject>()
+                    .Select(o => new
+                    {
+                        Name = o?["name"]?.ToString() ?? "",
+                        DisplayName = o?["displayName"]?.ToString() ?? ""
+                    })
+                    .ToList();
 
-                async Task CreateColumnAsync(object body)
+                bool Has(string internalOrDisplay) =>
+                    existing.Any(e =>
+                        internalOrDisplay.Equals(e.Name, StringComparison.OrdinalIgnoreCase) ||
+                        internalOrDisplay.Equals(e.DisplayName, StringComparison.OrdinalIgnoreCase));
+
+                async Task CreateTextAsync(string internalName, string displayName)
                 {
-                    using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-                    await _http.PostAsync($"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{listId}/columns", content).ConfigureAwait(false);
+                    var body = new { name = internalName, displayName = displayName, text = new { } };
+                    var payload = JsonSerializer.Serialize(body);
+                    var resp = await _http.PostAsync(
+                        $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/columns",
+                        new StringContent(payload, Encoding.UTF8, "application/json")).ConfigureAwait(false);
+
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        var t = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        await LogAsync($"Falha ao criar coluna '{displayName}' (internal '{internalName}'). " +
+                                       $"HTTP {(int)resp.StatusCode} {resp.StatusCode}. Body={t}").ConfigureAwait(false);
+                    }
                 }
 
-                if (!existing.Contains("Usuario"))
-                    await CreateColumnAsync(new { name = "Usuario", text = new { } }).ConfigureAwait(false);
+                async Task CreateNumberAsync(string internalName, string displayName)
+                {
+                    var body = new { name = internalName, displayName = displayName, number = new { } };
+                    var payload = JsonSerializer.Serialize(body);
+                    var resp = await _http.PostAsync(
+                        $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/columns",
+                        new StringContent(payload, Encoding.UTF8, "application/json")).ConfigureAwait(false);
 
-                if (!existing.Contains("Arquivos"))
-                    await CreateColumnAsync(new { name = "Arquivos", text = new { } }).ConfigureAwait(false);
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        var t = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        await LogAsync($"Falha ao criar coluna '{displayName}' (internal '{internalName}'). " +
+                                       $"HTTP {(int)resp.StatusCode} {resp.StatusCode}. Body={t}").ConfigureAwait(false);
+                    }
+                }
 
-                if (!existing.Contains("Quantidade"))
-                    await CreateColumnAsync(new { name = "Quantidade", number = new { } }).ConfigureAwait(false);
-
-                if (!existing.Contains("Versao"))
-                    await CreateColumnAsync(new { name = "Versao", text = new { } }).ConfigureAwait(false);
+                if (!Has("Usuario")) await CreateTextAsync("Usuario", "Usuário").ConfigureAwait(false);
+                if (!Has("Arquivos")) await CreateTextAsync("Arquivos", "Arquivos").ConfigureAwait(false);
+                if (!Has("Quantidade")) await CreateNumberAsync("Quantidade", "Quantidade").ConfigureAwait(false);
+                if (!Has("Versao")) await CreateTextAsync("Versao", "Versão").ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore: tenta adicionar itens mesmo assim
+                await LogAsync("EnsureColumnsAsync EXCEPTION: " + ex).ConfigureAwait(false);
+            }
+        }
+
+        private async Task ProbeCreateMinimalItemAsync(string siteSpec, string listId)
+        {
+            try
+            {
+                var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items";
+                var body = new { fields = new { Title = $"probe-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}" } };
+                var payload = JsonSerializer.Serialize(body);
+                var resp = await PostWithRetryAsync(url, payload).ConfigureAwait(false);
+
+                if (!resp.success)
+                {
+                    await LogAsync($"PROBE falhou. HTTP {(int)resp.statusCode} {resp.statusCode}. Body={resp.body}")
+                        .ConfigureAwait(false);
+                    throw new InvalidOperationException("Falha no PROBE de criação de item. Verifique permissões e SiteId/URL.");
+                }
+                else
+                {
+                    await LogAsync("PROBE OK (item mínimo criado).").ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                await LogAsync("ProbeCreateMinimalItemAsync EXCEPTION: " + ex).ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        private async Task<(bool success, HttpStatusCode statusCode, string body)> PostWithRetryAsync(string url, string payload, int maxAttempts = 3)
+        {
+            int attempt = 0;
+            while (true)
+            {
+                attempt++;
+                try
+                {
+                    using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+                    using var resp = await _http.PostAsync(url, content).ConfigureAwait(false);
+                    var text = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                    if (resp.IsSuccessStatusCode)
+                        return (true, resp.StatusCode, text);
+
+                    if ((int)resp.StatusCode == 429 || (int)resp.StatusCode >= 500)
+                    {
+                        var delayMs = Math.Min(30000, (int)Math.Pow(2, attempt) * 500);
+                        await LogAsync($"POST falhou (tentativa {attempt}/{maxAttempts}) HTTP {(int)resp.StatusCode}. Esperando {delayMs} ms. Body={text}")
+                            .ConfigureAwait(false);
+                        if (attempt < maxAttempts) { await Task.Delay(delayMs).ConfigureAwait(false); continue; }
+                    }
+
+                    return (false, resp.StatusCode, text);
+                }
+                catch (Exception ex)
+                {
+                    await LogAsync($"POST EXCEPTION (tentativa {attempt}/{maxAttempts}): {ex}").ConfigureAwait(false);
+                    if (attempt >= maxAttempts) return (false, 0, ex.ToString());
+                    await Task.Delay(800 * attempt).ConfigureAwait(false);
+                }
             }
         }
 
@@ -228,15 +411,28 @@ namespace leituraWPF.Services
                     if (list != null) return list;
                 }
             }
-            catch { }
+            catch (Exception ex) { await LogAsync("LoadAsync EXCEPTION: " + ex).ConfigureAwait(false); }
             return new List<Entry>();
         }
 
         private async Task SaveAsync(List<Entry> list)
         {
-            var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(_filePath, json).ConfigureAwait(false);
+            try
+            {
+                var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(_filePath, json).ConfigureAwait(false);
+            }
+            catch (Exception ex) { await LogAsync("SaveAsync EXCEPTION: " + ex).ConfigureAwait(false); }
+        }
+
+        private async Task LogAsync(string message)
+        {
+            try
+            {
+                var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}";
+                await File.AppendAllTextAsync(_logPath, line).ConfigureAwait(false);
+            }
+            catch { /* não deixa o log travar a execução */ }
         }
     }
 }
-
