@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -30,6 +31,7 @@ namespace leituraWPF.Services
             public List<string> Arquivos { get; set; } = new();
             public int Quantidade { get; set; }
             public string Versao { get; set; } = string.Empty;
+            public bool Sincronizado { get; set; }
         }
 
         public ProcessadosService(AppConfig cfg, TokenService tokenService)
@@ -50,7 +52,8 @@ namespace leituraWPF.Services
                 Usuario = usuario,
                 Arquivos = arr,
                 Quantidade = arr.Count,
-                Versao = versao
+                Versao = versao,
+                Sincronizado = false
             });
             await SaveAsync(list).ConfigureAwait(false);
         }
@@ -58,7 +61,8 @@ namespace leituraWPF.Services
         public async Task TrySyncAsync()
         {
             var list = await LoadAsync().ConfigureAwait(false);
-            if (list.Count == 0) return;
+            var pendentes = list.Where(e => !e.Sincronizado).ToList();
+            if (pendentes.Count == 0) return;
 
             try
             {
@@ -72,8 +76,7 @@ namespace leituraWPF.Services
 
                 var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{listId}/items";
 
-                var remaining = new List<Entry>(list);
-                foreach (var item in list)
+                foreach (var item in pendentes)
                 {
                     var body = new
                     {
@@ -90,7 +93,7 @@ namespace leituraWPF.Services
                     using var resp = await _http.PostAsync(url, content).ConfigureAwait(false);
                     if (resp.IsSuccessStatusCode)
                     {
-                        remaining.Remove(item);
+                        item.Sincronizado = true;
                     }
                     else
                     {
@@ -98,11 +101,25 @@ namespace leituraWPF.Services
                     }
                 }
 
-                await SaveAsync(remaining).ConfigureAwait(false);
+                await SaveAsync(list).ConfigureAwait(false);
             }
             catch
             {
                 // mantém arquivo para próxima tentativa
+            }
+        }
+
+        public static async Task<bool> HasInternetConnectionAsync()
+        {
+            try
+            {
+                using var client = new HttpClient();
+                using var resp = await client.GetAsync("https://graph.microsoft.com/v1.0/$metadata", HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                return resp.IsSuccessStatusCode || resp.StatusCode == HttpStatusCode.Unauthorized;
+            }
+            catch
+            {
+                return false;
             }
         }
 

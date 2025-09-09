@@ -41,6 +41,7 @@ namespace leituraWPF
         private readonly Funcionario? _funcionario;
         private readonly SemaphoreSlim _syncMutex = new(1, 1);
         private readonly PeriodicTimer _autoSyncTimer = new(TimeSpan.FromMinutes(10));
+        private readonly PeriodicTimer _processadosTimer = new(TimeSpan.FromSeconds(10));
         private readonly CancellationTokenSource _cts = new();
         private bool _suppressLogs = false;
         private bool _allowClose = false;
@@ -145,6 +146,23 @@ namespace leituraWPF
                 catch (ObjectDisposedException) { /* timer disposed: ok */ }
             }, _cts.Token);
 
+            // verifica conectividade a cada 10 segundos e sincroniza registros pendentes
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (await _processadosTimer.WaitForNextTickAsync(_cts.Token))
+                    {
+                        if (await ProcessadosService.HasInternetConnectionAsync())
+                        {
+                            await _processadosService.TrySyncAsync();
+                        }
+                    }
+                }
+                catch (OperationCanceledException) { /* janela fechando: ok */ }
+                catch (ObjectDisposedException) { /* timer disposed: ok */ }
+            }, _cts.Token);
+
             // No carregamento: checa atualização (com timeout) e prepara o cache local
             this.Loaded += MainWindow_Loaded;
         }
@@ -168,6 +186,7 @@ namespace leituraWPF
             {
                 _cts.Cancel();
                 _autoSyncTimer.Dispose();
+                _processadosTimer.Dispose();
                 // Se seu BackupUploaderService tiver Stop(), chame aqui:
                 // _backup.Stop();
                 // Removido cast para IDisposable (classe não implementa IDisposable)
