@@ -14,6 +14,7 @@ namespace leituraWPF.Utils
         // ==== SharePoint origem (manutenção/instalação) ====
         public string SiteId { get; set; } = "";
         public string ListId { get; set; } = "";
+        public string ProcessLogListName { get; set; } = "ListCompillerLog";
 
         public List<string>? WantedPrefixes { get; set; }
 

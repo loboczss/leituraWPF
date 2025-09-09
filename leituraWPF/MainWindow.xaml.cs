@@ -29,7 +29,7 @@ namespace leituraWPF
         private readonly RenamerService _renamer = new RenamerService();
         private readonly InstallationRenamerService _installRenamer = new InstallationRenamerService();
         private readonly BackupUploaderService _backup;
-        private readonly ListaService _listaService;
+        private readonly ProcessadosService _processadosService;
 
         private bool _checkedUpdateAtStartup = false;
 
@@ -76,7 +76,7 @@ namespace leituraWPF
             _jsonReader = new JsonReaderService(this);
 
             _backup = backupService ?? new BackupUploaderService(Program.Config, _tokenService);
-            _listaService = new ListaService(Program.Config, _tokenService);
+            _processadosService = new ProcessadosService(Program.Config, _tokenService);
 
             // Garante que o serviço de upload esteja sempre ativo
             _backup.Start();
@@ -107,22 +107,7 @@ namespace leituraWPF
                         });
                     }
 
-                    if (_funcionario != null)
-                    {
-                        var os = ExtractOs(local);
-                        if (!string.IsNullOrWhiteSpace(os))
-                        {
-                            var line = $"{os} - {_funcionario.Nome.ToUpperInvariant()} - {_funcionario.Matricula} - {DateTime.Now:dd/MM/yyyy HH:mm}";
-                            try
-                            {
-                                await _listaService.AppendAsync(line);
-                            }
-                            catch (Exception ex)
-                            {
-                                Log($"[LISTA] ERRO ao atualizar lista.txt: {ex.Message}", true);
-                            }
-                        }
-                    }
+                    await _processadosService.TrySyncAsync();
                 }
                 catch (TaskCanceledException)
                 {
@@ -352,21 +337,6 @@ namespace leituraWPF
             }
         }
 
-        private static string ExtractOs(string path)
-        {
-            try
-            {
-                var name = Path.GetFileNameWithoutExtension(path);
-                if (string.IsNullOrEmpty(name)) return string.Empty;
-                var parts = name.Split('_', StringSplitOptions.RemoveEmptyEntries);
-                return parts.Length >= 3 ? parts[^3] : string.Empty;
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
-
         private string GetSelectedUf()
         {
             var tag = (cboUf?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "AC";
@@ -578,6 +548,23 @@ namespace leituraWPF
                     record,
                     new Progress<double>(v => progress.Value = Math.Max(0, Math.Min(100, v)))
                 );
+
+                try
+                {
+                    var destino = _renamer.LastDestination;
+                    if (!string.IsNullOrWhiteSpace(destino) && Directory.Exists(destino))
+                    {
+                        var arquivos = Directory.GetFiles(destino).Select(Path.GetFileName);
+                        var versao = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? string.Empty;
+                        var usuario = _funcionario?.Nome ?? Environment.UserName;
+                        await _processadosService.AddAsync(destino, usuario, arquivos, versao);
+                        await _processadosService.TrySyncAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"[PROCESSADOS] ERRO ao registrar: {ex.Message}");
+                }
 
                 btnAbrirPasta.Visibility = Visibility.Visible;
                 SetStatus("Concluído.");
