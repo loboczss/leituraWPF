@@ -87,6 +87,8 @@ namespace leituraWPF.Services
                     _http.DefaultRequestHeaders.Accept.Clear();
                     _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
+                    await EnsureColumnsAsync(listId).ConfigureAwait(false);
+
                     var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{listId}/items";
 
                     foreach (var item in pendentes)
@@ -154,12 +156,64 @@ namespace leituraWPF.Services
                 var obj = JsonNode.Parse(json)?.AsObject();
                 var arr = obj?["value"] as JsonArray;
                 var id = arr?.OfType<JsonObject>().FirstOrDefault()?["id"]?.ToString();
+
+                if (string.IsNullOrEmpty(id))
+                {
+                    var body = new
+                    {
+                        displayName = _cfg.ProcessLogListName,
+                        list = new { template = "genericList" }
+                    };
+
+                    using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                    using var resp = await _http.PostAsync($"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists", content).ConfigureAwait(false);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        var created = JsonNode.Parse(await resp.Content.ReadAsStringAsync().ConfigureAwait(false))?.AsObject();
+                        id = created?["id"]?.ToString();
+                    }
+                }
+
                 _listId = id;
                 return id;
             }
             catch
             {
                 return null;
+            }
+        }
+
+        private async Task EnsureColumnsAsync(string listId)
+        {
+            try
+            {
+                var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{listId}/columns?$select=name";
+                var json = await _http.GetStringAsync(url).ConfigureAwait(false);
+                var existing = JsonNode.Parse(json)?["value"]?.AsArray()?
+                    .OfType<JsonObject>().Select(n => n?["name"]?.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                async Task CreateColumnAsync(object body)
+                {
+                    using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                    await _http.PostAsync($"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{listId}/columns", content).ConfigureAwait(false);
+                }
+
+                if (!existing.Contains("Usuario"))
+                    await CreateColumnAsync(new { name = "Usuario", text = new { } }).ConfigureAwait(false);
+
+                if (!existing.Contains("Arquivos"))
+                    await CreateColumnAsync(new { name = "Arquivos", text = new { } }).ConfigureAwait(false);
+
+                if (!existing.Contains("Quantidade"))
+                    await CreateColumnAsync(new { name = "Quantidade", number = new { } }).ConfigureAwait(false);
+
+                if (!existing.Contains("Versao"))
+                    await CreateColumnAsync(new { name = "Versao", text = new { } }).ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignore: tenta adicionar itens mesmo assim
             }
         }
 
