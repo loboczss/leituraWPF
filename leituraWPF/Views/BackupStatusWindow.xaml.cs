@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -23,6 +24,11 @@ namespace leituraWPF
         private readonly ObservableCollection<BackupItem> _errors = new();
         private readonly ObservableCollection<BackupItem> _historySent = new();
         private readonly ObservableCollection<BackupItem> _historyErrors = new();
+
+        private readonly ConcurrentDictionary<string, BackupItem> _pendingCache = new();
+        private readonly ConcurrentDictionary<string, BackupItem> _sentCache = new();
+        private readonly ConcurrentDictionary<string, BackupItem> _errorCache = new();
+
         private ICollectionView _historySentView;
         private ICollectionView _historyErrorView;
         private string _historySearchText = string.Empty;
@@ -33,41 +39,55 @@ namespace leituraWPF
         private string _statusText = "Preparando backup...";
         private string _timeElapsed = "";
         private bool _isCompleted = false;
+        private bool _isInitialized = false;
+
+        // Throttling para atualizações de UI
+        private readonly SemaphoreSlim _uiUpdateSemaphore = new(1, 1);
+        private DateTime _lastProgressUpdate = DateTime.MinValue;
+        private readonly TimeSpan _progressUpdateThrottle = TimeSpan.FromMilliseconds(100);
         #endregion
 
         #region Properties
         public string CurrentStatusText
         {
             get => _statusText;
-            set
+            private set
             {
-                _statusText = value;
-                OnPropertyChanged();
+                if (_statusText != value)
+                {
+                    _statusText = value;
+                    OnPropertyChanged();
+                }
             }
         }
 
         public string CurrentTimeElapsed
         {
             get => _timeElapsed;
-            set
+            private set
             {
-                _timeElapsed = value;
-                OnPropertyChanged();
+                if (_timeElapsed != value)
+                {
+                    _timeElapsed = value;
+                    OnPropertyChanged();
+                }
             }
         }
 
         public bool IsCompleted
         {
             get => _isCompleted;
-            set
+            private set
             {
-                _isCompleted = value;
-                OnPropertyChanged();
+                if (_isCompleted != value)
+                {
+                    _isCompleted = value;
+                    OnPropertyChanged();
+                }
             }
         }
 
         public ObservableCollection<BackupItem> HistorySent => _historySent;
-
         public ObservableCollection<BackupItem> HistoryErrors => _historyErrors;
 
         public string HistorySearchText
@@ -75,10 +95,12 @@ namespace leituraWPF
             get => _historySearchText;
             set
             {
-                _historySearchText = value;
-                OnPropertyChanged();
-                _historySentView?.Refresh();
-                _historyErrorView?.Refresh();
+                if (_historySearchText != value)
+                {
+                    _historySearchText = value;
+                    OnPropertyChanged();
+                    ApplyHistoryFilter();
+                }
             }
         }
         #endregion
@@ -95,8 +117,8 @@ namespace leituraWPF
             InitializeTimer();
             SetupEventHandlers();
 
-            // Inicialização assíncrona
-            _ = Task.Run(InitializeAsync);
+            // Inicialização assíncrona sem bloquear UI
+            InitializeAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
         }
         #endregion
 
@@ -129,40 +151,36 @@ namespace leituraWPF
             _backup.FileUploaded += OnFileUploaded;
             _backup.FileUploadFailed += OnFileUploadFailed;
             _backup.CountersChangedDetailed += OnCountersChanged;
-
             Loaded += BackupStatusWindow_Loaded;
         }
 
-        private async Task InitializeAsync()
+        private async Task InitializeAsync(CancellationToken cancellationToken)
         {
             try
             {
-                await Task.Delay(500, _cancellationTokenSource.Token); // Simula carregamento
+                await Task.Delay(100, cancellationToken); // Reduzido de 500ms
 
-                await Dispatcher.InvokeAsync(() =>
+                await UpdateStatusAsync("Carregando arquivos...", cancellationToken);
+
+                var tasks = new[]
                 {
-                    CurrentStatusText = "Carregando arquivos...";
-                });
+                    RefreshCollectionsAsync(cancellationToken),
+                    LoadHistoryAsync(cancellationToken)
+                };
 
-                await RefreshCollectionsAsync();
-                await LoadHistoryAsync();
+                await Task.WhenAll(tasks);
 
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    UpdateProgress(_pending.Count, _sent.Count, _errors.Count);
-                    UpdateCounters(_pending.Count, _sent.Count, _errors.Count);
-                });
+                await UpdateProgressAndCountersAsync(cancellationToken);
+                _isInitialized = true;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // Operação foi cancelada
             }
             catch (Exception ex)
             {
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    CurrentStatusText = $"Erro na inicialização: {ex.Message}";
-                });
+                await UpdateStatusAsync($"Erro na inicialização: {ex.Message}", cancellationToken);
+                Debug.WriteLine($"Erro na inicialização: {ex}");
             }
         }
         #endregion
@@ -170,9 +188,9 @@ namespace leituraWPF
         #region Event Handlers
         private void BackupStatusWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            CurrentStatusText = "Backup iniciado";
+            if (_isInitialized)
+                CurrentStatusText = "Backup iniciado";
         }
-
 
         private void UpdateTimer_Tick(object sender, EventArgs e)
         {
@@ -180,8 +198,6 @@ namespace leituraWPF
             {
                 var elapsed = _stopwatch.Elapsed;
                 CurrentTimeElapsed = $"Tempo: {elapsed:hh\\:mm\\:ss}";
-
-                // Atualiza status baseado no progresso
                 UpdateStatusText();
             }
         }
@@ -189,76 +205,64 @@ namespace leituraWPF
         private async void OnFileUploaded(string localPath, string remotePath, long size)
         {
             var fileName = GetDisplayName(localPath);
+            if (string.IsNullOrEmpty(fileName)) return;
 
             try
             {
-                await Dispatcher.InvokeAsync(() =>
+                // Remove do cache de pendentes
+                _pendingCache.TryRemove(fileName, out _);
+
+                // Adiciona ao cache de enviados se não existir
+                var sentItem = new BackupItem
                 {
-                    // Remove da lista de pendentes
-                    var pendingItem = _pending.FirstOrDefault(x => x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase));
-                    if (pendingItem != null)
-                    {
-                        _pending.Remove(pendingItem);
-                    }
+                    FileName = fileName,
+                    Size = FormatFileSize(size),
+                    CompletedAt = DateTime.Now,
+                    RemotePath = remotePath
+                };
 
-                    // Adiciona à lista de enviados se não existir
-                    if (!_sent.Any(x => x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        _sent.Add(new BackupItem
-                        {
-                            FileName = fileName,
-                            Size = FormatFileSize(size),
-                            CompletedAt = DateTime.Now,
-                            RemotePath = remotePath
-                        });
-                    }
+                if (_sentCache.TryAdd(fileName, sentItem))
+                {
+                    await UpdateCollectionAsync(_pending, _sent, fileName, sentItem);
+                }
 
-                    UpdateProgress(_pending.Count, _sent.Count, _errors.Count);
-                    UpdateCounters(_pending.Count, _sent.Count, _errors.Count);
-                }, DispatcherPriority.Background);
-                _ = LoadHistoryAsync();
+                await ThrottledProgressUpdateAsync();
+                LoadHistoryAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                // Log do erro sem afetar a UI
-                Debug.WriteLine($"Erro ao atualizar UI para arquivo enviado {fileName}: {ex.Message}");
+                Debug.WriteLine($"Erro ao processar arquivo enviado {fileName}: {ex.Message}");
             }
         }
 
         private async void OnFileUploadFailed(string localPath, string errorMessage, Exception ex)
         {
             var fileName = GetDisplayName(localPath);
+            if (string.IsNullOrEmpty(fileName)) return;
 
             try
             {
-                await Dispatcher.InvokeAsync(() =>
+                // Remove do cache de pendentes
+                _pendingCache.TryRemove(fileName, out _);
+
+                var errorItem = new BackupItem
                 {
-                    // Remove da lista de pendentes
-                    var pendingItem = _pending.FirstOrDefault(x => x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase));
-                    if (pendingItem != null)
-                    {
-                        _pending.Remove(pendingItem);
-                    }
+                    FileName = fileName,
+                    ErrorMessage = ex?.Message ?? errorMessage ?? "Erro desconhecido",
+                    CompletedAt = DateTime.Now
+                };
 
-                    // Adiciona à lista de erros se não existir
-                    if (!_errors.Any(x => x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        _errors.Add(new BackupItem
-                        {
-                            FileName = fileName,
-                            ErrorMessage = ex?.Message ?? errorMessage ?? "Erro desconhecido",
-                            CompletedAt = DateTime.Now
-                        });
-                    }
+                if (_errorCache.TryAdd(fileName, errorItem))
+                {
+                    await UpdateCollectionAsync(_pending, _errors, fileName, errorItem);
+                }
 
-                    UpdateProgress(_pending.Count, _sent.Count, _errors.Count);
-                    UpdateCounters(_pending.Count, _sent.Count, _errors.Count);
-                }, DispatcherPriority.Background);
-                _ = LoadHistoryAsync();
+                await ThrottledProgressUpdateAsync();
+                LoadHistoryAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
             }
             catch (Exception updateEx)
             {
-                Debug.WriteLine($"Erro ao atualizar UI para falha de upload {fileName}: {updateEx.Message}");
+                Debug.WriteLine($"Erro ao processar falha de upload {fileName}: {updateEx.Message}");
             }
         }
 
@@ -266,15 +270,12 @@ namespace leituraWPF
         {
             try
             {
-                var refreshTask = RefreshCollectionsAsync();
-                var historyTask = LoadHistoryAsync();
-                await Task.WhenAll(refreshTask, historyTask);
+                var token = _cancellationTokenSource.Token;
+                var refreshTask = RefreshCollectionsAsync(token);
+                var historyTask = LoadHistoryAsync(token);
 
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    UpdateProgress(pending, uploaded, error);
-                    UpdateCounters(pending, uploaded, error);
-                }, DispatcherPriority.Background);
+                await Task.WhenAll(refreshTask, historyTask);
+                await UpdateProgressAndCountersAsync(token);
             }
             catch (Exception ex)
             {
@@ -287,12 +288,10 @@ namespace leituraWPF
             try
             {
                 await _backup.RetryErrorsAsync();
-                await RefreshCollectionsAsync();
+                await RefreshCollectionsAsync(_cancellationTokenSource.Token);
 
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    _errors.Clear();
-                }, DispatcherPriority.Background);
+                await Dispatcher.InvokeAsync(() => _errors.Clear(), DispatcherPriority.Background);
+                _errorCache.Clear();
 
                 await _backup.ForceRunOnceAsync();
             }
@@ -304,74 +303,93 @@ namespace leituraWPF
 
         private async void RetryHistory_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is System.Windows.Controls.Button btn && btn.Tag is string path)
+            if (sender is not System.Windows.Controls.Button btn || btn.Tag is not string path)
+                return;
+
+            try
             {
-                try
+                var token = _cancellationTokenSource.Token;
+                await _backup.RetryErrorAsync(path);
+
+                var tasks = new[]
                 {
-                    await _backup.RetryErrorAsync(path);
-                    await RefreshCollectionsAsync();
-                    await LoadHistoryAsync();
-                    await _backup.ForceRunOnceAsync();
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Erro ao reenviar arquivo do histórico: {ex.Message}");
-                }
+                    RefreshCollectionsAsync(token),
+                    LoadHistoryAsync(token)
+                };
+
+                await Task.WhenAll(tasks);
+                await _backup.ForceRunOnceAsync();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Erro ao reenviar arquivo do histórico: {ex.Message}");
             }
         }
         #endregion
 
         #region Private Methods
-        private async Task RefreshCollectionsAsync()
+        private async Task RefreshCollectionsAsync(CancellationToken cancellationToken = default)
         {
             try
             {
                 var pendingItems = await Task.Run(() =>
                 {
-                    var list = new List<BackupItem>();
+                    var items = new List<BackupItem>();
                     foreach (var filePath in _backup.GetPendingFiles())
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
+
                         var fileName = Path.GetFileName(filePath);
+                        if (string.IsNullOrEmpty(fileName)) continue;
+
+                        if (!File.Exists(filePath)) continue;
+
                         var fileInfo = new FileInfo(filePath);
-                        list.Add(new BackupItem
+                        var item = new BackupItem
                         {
                             FileName = fileName,
                             Size = FormatFileSize(fileInfo.Length),
                             FilePath = filePath
-                        });
+                        };
+
+                        items.Add(item);
+                        _pendingCache.TryAdd(fileName, item);
                     }
-                    return list;
-                });
+                    return items;
+                }, cancellationToken);
+
+                if (cancellationToken.IsCancellationRequested) return;
 
                 await Dispatcher.InvokeAsync(() =>
                 {
                     _pending.Clear();
                     foreach (var item in pendingItems)
-                    {
                         _pending.Add(item);
-                    }
                 }, DispatcherPriority.Background);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Operação cancelada
             }
             catch (Exception ex)
             {
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    CurrentStatusText = $"Erro ao atualizar listas: {ex.Message}";
-                });
+                await UpdateStatusAsync($"Erro ao atualizar listas: {ex.Message}", cancellationToken);
                 Debug.WriteLine($"Erro em RefreshCollections: {ex}");
             }
         }
 
-        private async Task LoadHistoryAsync()
+        private async Task LoadHistoryAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                var sentItemsTask = Task.Run(() =>
+                var (sentItems, errorItems) = await Task.Run(() =>
                 {
-                    return _backup.GetSentFiles()
-                        .OrderByDescending(f => File.GetLastWriteTime(f))
+                    var sent = _backup.GetSentFiles()
+                        .AsParallel()
+                        .Where(f => File.Exists(f))
                         .Select(filePath =>
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
                             var info = new FileInfo(filePath);
                             return new BackupItem
                             {
@@ -379,16 +397,16 @@ namespace leituraWPF
                                 CompletedAt = info.LastWriteTime,
                                 FilePath = filePath
                             };
-                        }).ToList();
-                });
+                        })
+                        .OrderByDescending(f => f.CompletedAt)
+                        .ToList();
 
-                var errorItemsTask = Task.Run(() =>
-                {
-                    return _backup.GetErrorFiles()
-                        .Where(f => !f.EndsWith(".error", StringComparison.OrdinalIgnoreCase))
-                        .OrderByDescending(f => File.GetLastWriteTime(f))
+                    var errors = _backup.GetErrorFiles()
+                        .AsParallel()
+                        .Where(f => !f.EndsWith(".error", StringComparison.OrdinalIgnoreCase) && File.Exists(f))
                         .Select(filePath =>
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
                             var info = new FileInfo(filePath);
                             return new BackupItem
                             {
@@ -396,26 +414,83 @@ namespace leituraWPF
                                 CompletedAt = info.LastWriteTime,
                                 FilePath = filePath
                             };
-                        }).ToList();
-                });
+                        })
+                        .OrderByDescending(f => f.CompletedAt)
+                        .ToList();
 
-                var sentItems = await sentItemsTask;
-                var errorItems = await errorItemsTask;
+                    return (sent, errors);
+                }, cancellationToken);
+
+                if (cancellationToken.IsCancellationRequested) return;
 
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    _historySent.Clear();
-                    foreach (var item in sentItems)
-                        _historySent.Add(item);
-
-                    _historyErrors.Clear();
-                    foreach (var item in errorItems)
-                        _historyErrors.Add(item);
+                    UpdateCollection(_historySent, sentItems);
+                    UpdateCollection(_historyErrors, errorItems);
                 }, DispatcherPriority.Background);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Operação cancelada
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Erro ao carregar histórico: {ex.Message}");
+            }
+        }
+
+        private async Task UpdateCollectionAsync(ObservableCollection<BackupItem> fromCollection,
+            ObservableCollection<BackupItem> toCollection, string fileName, BackupItem newItem)
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                var existingItem = fromCollection.FirstOrDefault(x =>
+                    x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase));
+
+                if (existingItem != null)
+                    fromCollection.Remove(existingItem);
+
+                if (!toCollection.Any(x => x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase)))
+                    toCollection.Add(newItem);
+
+            }, DispatcherPriority.Background);
+        }
+
+        private static void UpdateCollection<T>(ObservableCollection<T> collection, IEnumerable<T> newItems)
+        {
+            collection.Clear();
+            foreach (var item in newItems)
+                collection.Add(item);
+        }
+
+        private async Task ThrottledProgressUpdateAsync()
+        {
+            var now = DateTime.Now;
+            if (now - _lastProgressUpdate < _progressUpdateThrottle) return;
+
+            _lastProgressUpdate = now;
+            await UpdateProgressAndCountersAsync(_cancellationTokenSource.Token);
+        }
+
+        private async Task UpdateProgressAndCountersAsync(CancellationToken cancellationToken = default)
+        {
+            if (!await _uiUpdateSemaphore.WaitAsync(50, cancellationToken)) return;
+
+            try
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    var pending = _pending.Count;
+                    var sent = _sent.Count;
+                    var errors = _errors.Count;
+
+                    UpdateProgress(pending, sent, errors);
+                    UpdateCounters(pending, sent, errors);
+                }, DispatcherPriority.Background);
+            }
+            finally
+            {
+                _uiUpdateSemaphore.Release();
             }
         }
 
@@ -428,18 +503,16 @@ namespace leituraWPF
 
                 if (total == 0)
                 {
-                    ProgressBar.Value = 0;
-                    ProgressText.Text = "0%";
-                    MainProgress.Text = "0%";
+                    SetProgressValues(0, "0%");
                     return;
                 }
 
-                double percent = (completed * 100.0) / total;
-                ProgressBar.Value = Math.Min(percent, 100);
-                ProgressText.Text = $"{percent:F1}%";
-                MainProgress.Text = $"{percent:F1}%";
+                var percent = Math.Min((completed * 100.0) / total, 100);
+                var percentText = $"{percent:F1}%";
 
-                if (completed == total && total > 0)
+                SetProgressValues(percent, percentText);
+
+                if (completed == total && total > 0 && !IsCompleted)
                 {
                     IsCompleted = true;
                     _stopwatch.Stop();
@@ -452,6 +525,13 @@ namespace leituraWPF
             {
                 Debug.WriteLine($"Erro em UpdateProgress: {ex.Message}");
             }
+        }
+
+        private void SetProgressValues(double value, string text)
+        {
+            ProgressBar.Value = value;
+            ProgressText.Text = text;
+            MainProgress.Text = text;
         }
 
         private void UpdateCounters(long pending, long uploaded, long error)
@@ -474,18 +554,15 @@ namespace leituraWPF
 
             try
             {
-                if (_pending.Any())
-                {
-                    CurrentStatusText = $"Processando arquivos... ({_sent.Count + _errors.Count} de {_pending.Count + _sent.Count + _errors.Count})";
-                }
-                else if (_sent.Any() || _errors.Any())
-                {
-                    CurrentStatusText = "Finalizando backup...";
-                }
-                else
-                {
-                    CurrentStatusText = "Aguardando arquivos...";
-                }
+                var pendingCount = _pending.Count;
+                var totalProcessed = _sent.Count + _errors.Count;
+                var total = pendingCount + totalProcessed;
+
+                CurrentStatusText = pendingCount > 0
+                    ? $"Processando arquivos... ({totalProcessed} de {total})"
+                    : totalProcessed > 0
+                        ? "Finalizando backup..."
+                        : "Aguardando arquivos...";
             }
             catch (Exception ex)
             {
@@ -495,33 +572,36 @@ namespace leituraWPF
 
         private void OpenFileLocation_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is System.Windows.Controls.Button btn && btn.Tag is string path && File.Exists(path))
+            if (sender is not System.Windows.Controls.Button btn ||
+                btn.Tag is not string path ||
+                !File.Exists(path)) return;
+
+            try
             {
-                try
+                Process.Start(new ProcessStartInfo
                 {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = $"/select,\"{path}\"",
-                        UseShellExecute = true
-                    });
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Erro ao abrir local do arquivo: {ex.Message}");
-                }
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{path}\"",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Erro ao abrir local do arquivo: {ex.Message}");
             }
         }
 
         private static string FormatFileSize(long bytes)
         {
-            string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-            int counter = 0;
-            decimal number = bytes;
+            if (bytes == 0) return "0 B";
 
-            while (Math.Round(number / 1024) >= 1)
+            string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
+            var counter = 0;
+            var number = (decimal)bytes;
+
+            while (Math.Round(number / 1024) >= 1 && counter < suffixes.Length - 1)
             {
-                number = number / 1024;
+                number /= 1024;
                 counter++;
             }
 
@@ -530,23 +610,52 @@ namespace leituraWPF
 
         private bool HistoryFilter(object obj)
         {
-            if (obj is not BackupItem item) return false;
-            if (string.IsNullOrWhiteSpace(HistorySearchText)) return true;
-            return item.FileName?.Contains(HistorySearchText, StringComparison.OrdinalIgnoreCase) == true;
+            return obj is BackupItem item &&
+                   (string.IsNullOrWhiteSpace(HistorySearchText) ||
+                    item.FileName?.Contains(HistorySearchText, StringComparison.OrdinalIgnoreCase) == true);
+        }
+
+        private void ApplyHistoryFilter()
+        {
+            _historySentView?.Refresh();
+            _historyErrorView?.Refresh();
         }
 
         private static string GetDisplayName(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath)) return filePath;
 
-            var directory = Path.GetDirectoryName(filePath);
-            var folderName = string.IsNullOrEmpty(directory) ? string.Empty : new DirectoryInfo(directory).Name;
-            var prefix = folderName.Split('_').FirstOrDefault() ?? folderName;
+            try
+            {
+                var directory = Path.GetDirectoryName(filePath);
+                var folderName = string.IsNullOrEmpty(directory) ? string.Empty :
+                    new DirectoryInfo(directory).Name;
+                var prefix = folderName.Split('_').FirstOrDefault() ?? folderName;
 
-            var fileName = Path.GetFileNameWithoutExtension(filePath);
-            var suffix = fileName.Split('_').LastOrDefault() ?? fileName;
+                var fileName = Path.GetFileNameWithoutExtension(filePath);
+                var suffix = fileName.Split('_').LastOrDefault() ?? fileName;
 
-            return string.IsNullOrEmpty(prefix) ? suffix : $"{prefix}_{suffix}";
+                return string.IsNullOrEmpty(prefix) ? suffix : $"{prefix}_{suffix}";
+            }
+            catch
+            {
+                return Path.GetFileName(filePath) ?? filePath;
+            }
+        }
+
+        private async Task UpdateStatusAsync(string status, CancellationToken cancellationToken = default)
+        {
+            if (cancellationToken.IsCancellationRequested) return;
+
+            try
+            {
+                await Dispatcher.InvokeAsync(() => CurrentStatusText = status,
+                    DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Erro ao atualizar status: {ex.Message}");
+            }
         }
 
         private async Task CleanupAsync()
@@ -555,9 +664,9 @@ namespace leituraWPF
             {
                 _updateTimer?.Stop();
                 _stopwatch?.Stop();
-                _cancellationTokenSource?.Cancel();
 
-                // Desregistra eventos
+                await _cancellationTokenSource.CancelAsync();
+
                 if (_backup != null)
                 {
                     _backup.FileUploaded -= OnFileUploaded;
@@ -565,8 +674,8 @@ namespace leituraWPF
                     _backup.CountersChangedDetailed -= OnCountersChanged;
                 }
 
-                // Aguarda um pouco para operações assíncronas terminarem
-                await Task.Delay(100);
+                // Pequena pausa para operações assíncronas terminarem
+                await Task.Delay(50);
             }
             catch (Exception ex)
             {
@@ -575,7 +684,7 @@ namespace leituraWPF
             finally
             {
                 _cancellationTokenSource?.Dispose();
-                _updateTimer?.Stop();
+                _uiUpdateSemaphore?.Dispose();
             }
         }
         #endregion
@@ -611,41 +720,85 @@ namespace leituraWPF
         public string FileName
         {
             get => _fileName;
-            set { _fileName = value; OnPropertyChanged(); }
+            set
+            {
+                if (_fileName != value)
+                {
+                    _fileName = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(DisplayText));
+                }
+            }
         }
 
         public string Size
         {
             get => _size;
-            set { _size = value; OnPropertyChanged(); }
+            set
+            {
+                if (_size != value)
+                {
+                    _size = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(DisplayText));
+                }
+            }
         }
 
         public string ErrorMessage
         {
             get => _errorMessage;
-            set { _errorMessage = value; OnPropertyChanged(); }
+            set
+            {
+                if (_errorMessage != value)
+                {
+                    _errorMessage = value;
+                    OnPropertyChanged();
+                }
+            }
         }
 
         public DateTime? CompletedAt
         {
             get => _completedAt;
-            set { _completedAt = value; OnPropertyChanged(); }
+            set
+            {
+                if (_completedAt != value)
+                {
+                    _completedAt = value;
+                    OnPropertyChanged();
+                }
+            }
         }
 
         public string FilePath
         {
             get => _filePath;
-            set { _filePath = value; OnPropertyChanged(); }
+            set
+            {
+                if (_filePath != value)
+                {
+                    _filePath = value;
+                    OnPropertyChanged();
+                }
+            }
         }
 
         public string RemotePath
         {
             get => _remotePath;
-            set { _remotePath = value; OnPropertyChanged(); }
+            set
+            {
+                if (_remotePath != value)
+                {
+                    _remotePath = value;
+                    OnPropertyChanged();
+                }
+            }
         }
 
         public string DisplayText =>
-            !string.IsNullOrEmpty(Size) ? $"{FileName} ({Size})" : FileName;
+            !string.IsNullOrEmpty(Size) ? $"{FileName} ({Size})" : FileName ?? string.Empty;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
