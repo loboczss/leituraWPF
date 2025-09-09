@@ -31,9 +31,9 @@ namespace leituraWPF.Services
 
         private class Entry
         {
+            public string NumOS { get; set; } = string.Empty;
             public string Pasta { get; set; } = string.Empty;
             public string Usuario { get; set; } = string.Empty;
-            public List<string> Arquivos { get; set; } = new();
             public int Quantidade { get; set; }
             public string Versao { get; set; } = string.Empty;
             public bool Sincronizado { get; set; }
@@ -49,7 +49,7 @@ namespace leituraWPF.Services
         }
 
         // ============ API pública ============
-        public async Task AddAsync(string pasta, string usuario, IEnumerable<string> arquivos, string versao)
+        public async Task AddAsync(string numos, string pasta, string usuario, IEnumerable<string> arquivos, string versao)
         {
             await _mutex.WaitAsync().ConfigureAwait(false);
             try
@@ -58,9 +58,9 @@ namespace leituraWPF.Services
                 var arr = arquivos?.ToList() ?? new List<string>();
                 list.Add(new Entry
                 {
+                    NumOS = numos ?? string.Empty,
                     Pasta = pasta ?? string.Empty,
                     Usuario = usuario ?? string.Empty,
-                    Arquivos = arr,
                     Quantidade = arr.Count,
                     Versao = versao ?? string.Empty,
                     Sincronizado = false
@@ -115,11 +115,11 @@ namespace leituraWPF.Services
                     {
                         fields = new Dictionary<string, object?>
                         {
-                            ["Title"] = string.IsNullOrWhiteSpace(item.Pasta) ? "(vazio)" : item.Pasta,
+                            ["Title"] = string.IsNullOrWhiteSpace(item.NumOS) ? "(vazio)" : item.NumOS,
                             ["Usuario"] = item.Usuario,
-                            ["Arquivos"] = string.Join(",", item.Arquivos ?? new List<string>()),
-                            ["Quantidade"] = item.Quantidade,
-                            ["Versao"] = item.Versao
+                            ["Versao"] = item.Versao,
+                            ["Pasta"] = item.Pasta,
+                            ["Quantidade"] = item.Quantidade
                         }
                     };
 
@@ -134,7 +134,7 @@ namespace leituraWPF.Services
                     else
                     {
                         fail++;
-                        await LogAsync($"Falha ao criar item (Title='{item.Pasta}'). " +
+                        await LogAsync($"Falha ao criar item (Title='{item.NumOS}'). " +
                                        $"HTTP {(int)resp.statusCode} {resp.statusCode}. Body={resp.body}")
                             .ConfigureAwait(false);
                     }
@@ -329,7 +329,7 @@ namespace leituraWPF.Services
                 }
 
                 if (!Has("Usuario")) await CreateTextAsync("Usuario", "Usuário").ConfigureAwait(false);
-                if (!Has("Arquivos")) await CreateTextAsync("Arquivos", "Arquivos").ConfigureAwait(false);
+                if (!Has("Pasta")) await CreateTextAsync("Pasta", "Pasta").ConfigureAwait(false);
                 if (!Has("Quantidade")) await CreateNumberAsync("Quantidade", "Quantidade").ConfigureAwait(false);
                 if (!Has("Versao")) await CreateTextAsync("Versao", "Versão").ConfigureAwait(false);
             }
@@ -344,7 +344,8 @@ namespace leituraWPF.Services
             try
             {
                 var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items";
-                var body = new { fields = new { Title = $"probe-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}" } };
+                var title = $"probe-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
+                var body = new { fields = new { Title = title } };
                 var payload = JsonSerializer.Serialize(body);
                 var resp = await PostWithRetryAsync(url, payload).ConfigureAwait(false);
 
@@ -356,7 +357,17 @@ namespace leituraWPF.Services
                 }
                 else
                 {
-                    await LogAsync("PROBE OK (item mínimo criado).").ConfigureAwait(false);
+                    try
+                    {
+                        var id = JsonNode.Parse(resp.body)?["id"]?.ToString();
+                        if (!string.IsNullOrEmpty(id))
+                            await _http.DeleteAsync($"{url}/{id}").ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        await LogAsync("Falha ao remover item de probe: " + ex).ConfigureAwait(false);
+                    }
+                    await LogAsync("PROBE OK (item mínimo criado e removido).").ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
