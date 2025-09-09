@@ -8,6 +8,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using leituraWPF.Utils;
 
@@ -23,6 +24,7 @@ namespace leituraWPF.Services
         private readonly HttpClient _http;
         private readonly string _filePath;
         private string? _listId;
+        private readonly SemaphoreSlim _mutex = new(1, 1);
 
         private class Entry
         {
@@ -44,68 +46,84 @@ namespace leituraWPF.Services
 
         public async Task AddAsync(string pasta, string usuario, IEnumerable<string> arquivos, string versao)
         {
-            var list = await LoadAsync().ConfigureAwait(false);
-            var arr = arquivos.ToList();
-            list.Add(new Entry
+            await _mutex.WaitAsync().ConfigureAwait(false);
+            try
             {
-                Pasta = pasta,
-                Usuario = usuario,
-                Arquivos = arr,
-                Quantidade = arr.Count,
-                Versao = versao,
-                Sincronizado = false
-            });
-            await SaveAsync(list).ConfigureAwait(false);
+                var list = await LoadAsync().ConfigureAwait(false);
+                var arr = arquivos.ToList();
+                list.Add(new Entry
+                {
+                    Pasta = pasta,
+                    Usuario = usuario,
+                    Arquivos = arr,
+                    Quantidade = arr.Count,
+                    Versao = versao,
+                    Sincronizado = false
+                });
+                await SaveAsync(list).ConfigureAwait(false);
+            }
+            finally
+            {
+                _mutex.Release();
+            }
         }
 
         public async Task TrySyncAsync()
         {
-            var list = await LoadAsync().ConfigureAwait(false);
-            var pendentes = list.Where(e => !e.Sincronizado).ToList();
-            if (pendentes.Count == 0) return;
-
+            await _mutex.WaitAsync().ConfigureAwait(false);
             try
             {
-                var listId = await ResolveListIdAsync().ConfigureAwait(false);
-                if (string.IsNullOrEmpty(listId)) return;
+                var list = await LoadAsync().ConfigureAwait(false);
+                var pendentes = list.Where(e => !e.Sincronizado).ToList();
+                if (pendentes.Count == 0) return;
 
-                var token = await _tokenService.GetTokenAsync().ConfigureAwait(false);
-                _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                _http.DefaultRequestHeaders.Accept.Clear();
-                _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-                var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{listId}/items";
-
-                foreach (var item in pendentes)
+                try
                 {
-                    var body = new
-                    {
-                        fields = new
-                        {
-                            Title = item.Pasta,
-                            Usuario = item.Usuario,
-                            Arquivos = string.Join(",", item.Arquivos),
-                            Quantidade = item.Quantidade,
-                            Versao = item.Versao
-                        }
-                    };
-                    using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-                    using var resp = await _http.PostAsync(url, content).ConfigureAwait(false);
-                    if (resp.IsSuccessStatusCode)
-                    {
-                        item.Sincronizado = true;
-                    }
-                    else
-                    {
-                        break; // interrompe em caso de falha
-                    }
-                }
+                    var listId = await ResolveListIdAsync().ConfigureAwait(false);
+                    if (string.IsNullOrEmpty(listId)) return;
 
-                await SaveAsync(list).ConfigureAwait(false);
+                    var token = await _tokenService.GetTokenAsync().ConfigureAwait(false);
+                    _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                    _http.DefaultRequestHeaders.Accept.Clear();
+                    _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+                    var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{listId}/items";
+
+                    foreach (var item in pendentes)
+                    {
+                        var body = new
+                        {
+                            fields = new
+                            {
+                                Title = item.Pasta,
+                                Usuario = item.Usuario,
+                                Arquivos = string.Join(",", item.Arquivos),
+                                Quantidade = item.Quantidade,
+                                Versao = item.Versao
+                            }
+                        };
+                        using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                        using var resp = await _http.PostAsync(url, content).ConfigureAwait(false);
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            item.Sincronizado = true;
+                        }
+                        else
+                        {
+                            break; // interrompe em caso de falha
+                        }
+                    }
+
+                    await SaveAsync(list).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // mantém arquivo para próxima tentativa
+                }
             }
-            catch
+            finally
             {
-                // mantém arquivo para próxima tentativa
+                _mutex.Release();
             }
         }
 
