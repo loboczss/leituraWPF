@@ -162,12 +162,23 @@ namespace leituraWPF.Services
 
                 // Salva JSON
                 var dst = Path.Combine(targetFolder, "funcionarios.json");
-                await using (var fs = File.Create(dst))
+                var tmp = dst + ".tmp";
+                try
                 {
-                    await JsonSerializer.SerializeAsync(fs, funcionarios,
-                        new JsonSerializerOptions { WriteIndented = true }, ct).ConfigureAwait(false);
+                    await using (var fs = File.Create(tmp))
+                    {
+                        await JsonSerializer.SerializeAsync(fs, funcionarios,
+                            new JsonSerializerOptions { WriteIndented = true }, ct).ConfigureAwait(false);
+                        await fs.FlushAsync(ct).ConfigureAwait(false);
+                    }
+
+                    File.Move(tmp, dst, true);
+                    await LogAsync($"Arquivo gerado: {dst} (registros={funcionarios.Count})");
                 }
-                await LogAsync($"Arquivo gerado: {dst} (registros={funcionarios.Count})");
+                finally
+                {
+                    try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                }
                 await LogAsync("=== DownloadJsonAsync: fim (SUCESSO) ===");
                 return dst;
             }
