@@ -1,7 +1,7 @@
 namespace leituraWPF.Models
 {
     /// <summary>
-    /// Representa um funcionário conforme armazenado no arquivo funcionarios.csv.
+    /// Representa um funcionário obtido da lista do SharePoint ou do cache local.
     /// </summary>
     public record Funcionario(
         string Matricula,

@@ -135,13 +135,13 @@ namespace leituraWPF
                 BtnLogin.IsEnabled = false;
 
                 var baseDir = AppContext.BaseDirectory;
-                var csvPath = Path.Combine(baseDir, "funcionarios.csv");
+                var jsonPath = Path.Combine(baseDir, "funcionarios.json");
 
                 // Tentar download apenas se não existir ou for muito antigo (> 1 dia)
-                bool needsDownload = !File.Exists(csvPath);
+                bool needsDownload = !File.Exists(jsonPath);
                 if (!needsDownload)
                 {
-                    var lastWrite = File.GetLastWriteTime(csvPath);
+                    var lastWrite = File.GetLastWriteTime(jsonPath);
                     needsDownload = DateTime.Now.Subtract(lastWrite).TotalDays > 1;
                 }
 
@@ -153,7 +153,7 @@ namespace leituraWPF
                         using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                         downloadCts.CancelAfter(TimeSpan.FromSeconds(10));
 
-                        await _funcService.DownloadCsvAsync(baseDir, downloadCts.Token);
+                        await _funcService.DownloadJsonAsync(baseDir, downloadCts.Token);
                     }
                     catch
                     {
@@ -161,18 +161,13 @@ namespace leituraWPF
                     }
                 }
 
-                if (!File.Exists(csvPath))
+                if (!File.Exists(jsonPath) && !ct.IsCancellationRequested)
                 {
-                    if (!ct.IsCancellationRequested)
-                    {
-                        System.Windows.MessageBox.Show("Arquivo de funcionários não encontrado.", "Erro",
-                                       MessageBoxButton.OK, MessageBoxImage.Warning);
-                        Close();
-                    }
-                    return;
+                    System.Windows.MessageBox.Show("Arquivo de funcionários não encontrado. Apenas acesso administrativo disponível.",
+                                   "Aviso", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
-                _funcionarios = await _funcService.LoadFuncionariosAsync(csvPath, ct);
+                _funcionarios = await _funcService.LoadFuncionariosAsync(jsonPath, ct);
 
                 if (_funcionarios.Count == 0 && !ct.IsCancellationRequested)
                 {

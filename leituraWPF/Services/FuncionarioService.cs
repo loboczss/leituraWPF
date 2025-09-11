@@ -7,7 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,7 +16,7 @@ using leituraWPF.Utils;
 namespace leituraWPF.Services
 {
     /// <summary>
-    /// Serviço responsável por baixar e ler o arquivo funcionarios.csv do SharePoint.
+    /// Serviço responsável por baixar e ler a lista de funcionários do SharePoint.
     /// </summary>
     public sealed class FuncionarioService
     {
@@ -43,113 +43,70 @@ namespace leituraWPF.Services
         }
 
         /// <summary>
-        /// Tenta baixar o arquivo funcionarios.csv para a pasta indicada.
+        /// Tenta baixar a lista de funcionários do SharePoint e salvar em um arquivo JSON.
         /// </summary>
         /// <returns>Caminho local do arquivo baixado ou null se não encontrado/erro.</returns>
-        public async Task<string?> DownloadCsvAsync(string targetFolder, CancellationToken ct = default)
+        public async Task<string?> DownloadJsonAsync(string targetFolder, CancellationToken ct = default)
         {
             Directory.CreateDirectory(targetFolder);
+
             var token = await _tokenService.GetTokenAsync().ConfigureAwait(false);
             _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
             _http.DefaultRequestHeaders.Accept.Clear();
             _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            var driveId = await GetDriveIdFromListAsync(ct).ConfigureAwait(false);
-            var searchUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/root/search(q='funcionarios.csv')?$select=name,id";
-            using var resp = await _http.GetAsync(searchUrl, ct).ConfigureAwait(false);
+            var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{_cfg.ListId}/items?expand=fields(select=Matricula,Nome)&$top=5000";
+            using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return null;
 
             var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            var root = JsonNode.Parse(json)?.AsObject();
+            var root = JsonNode.Parse(json) as JsonObject;
             var arr = root?["value"] as JsonArray;
-            var item = arr?.OfType<JsonObject>().FirstOrDefault(o =>
-                string.Equals(o["name"]?.ToString(), "funcionarios.csv", StringComparison.OrdinalIgnoreCase));
-            if (item == null) return null;
-            var id = item["id"]?.ToString();
-            if (string.IsNullOrEmpty(id)) return null;
+            if (arr == null) return null;
 
-            var downloadUrl = $"https://graph.microsoft.com/v1.0/drives/{driveId}/items/{id}/content";
-            var dst = Path.Combine(targetFolder, "funcionarios.csv");
-            using var resp2 = await _http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            if (!resp2.IsSuccessStatusCode) return null;
-            await using (var fs = File.Open(dst, FileMode.Create, FileAccess.Write, FileShare.None))
+            var list = new List<Funcionario>();
+            foreach (var item in arr.OfType<JsonObject>())
             {
-                await resp2.Content.CopyToAsync(fs, ct).ConfigureAwait(false);
+                var fields = item["fields"] as JsonObject;
+                var nome = fields?["Nome"]?.ToString();
+                var matricula = fields?["Matricula"]?.ToString() ?? fields?["Matrícula"]?.ToString();
+                if (string.IsNullOrWhiteSpace(nome) || string.IsNullOrWhiteSpace(matricula))
+                    continue;
+
+                matricula = matricula.Trim().TrimStart('0');
+                list.Add(new Funcionario(matricula, nome, "", "", "", "", ""));
             }
+
+            var dst = Path.Combine(targetFolder, "funcionarios.json");
+            await using var fs = File.Create(dst);
+            await JsonSerializer.SerializeAsync(fs, list, cancellationToken: ct).ConfigureAwait(false);
             return dst;
         }
 
         /// <summary>
-        /// Lê o arquivo CSV informado retornando um dicionário indexado pela matrícula.
+        /// Lê o arquivo JSON informado retornando um dicionário indexado pela matrícula.
+        /// Inclui um usuário administrador fixo.
         /// </summary>
-        public async Task<Dictionary<string, Funcionario>> LoadFuncionariosAsync(string csvPath, CancellationToken ct = default)
+        public async Task<Dictionary<string, Funcionario>> LoadFuncionariosAsync(string jsonPath, CancellationToken ct = default)
         {
             var dict = new Dictionary<string, Funcionario>();
-            if (!File.Exists(csvPath)) return dict;
-
-            var lines = await File.ReadAllLinesAsync(csvPath, ct).ConfigureAwait(false);
-            foreach (var line in lines)
+            if (!File.Exists(jsonPath))
             {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                var parts = ParseCsvLine(line);
-                if (parts.Length < 7) continue;
-
-                // Remove zeros à esquerda da matrícula
-                var matricula = parts[0].TrimStart('0');
-
-                var f = new Funcionario(matricula, parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]);
-                dict[f.Matricula] = f;
+                dict["258790"] = new Funcionario("258790", "Administrador", "", "", "", "", "");
+                return dict;
             }
+
+            await using var fs = File.OpenRead(jsonPath);
+            var list = await JsonSerializer.DeserializeAsync<List<Funcionario>>(fs, cancellationToken: ct).ConfigureAwait(false);
+            if (list != null)
+            {
+                foreach (var f in list)
+                    dict[f.Matricula] = f;
+            }
+
+            // Usuário administrador master
+            dict["258790"] = new Funcionario("258790", "Administrador", "", "", "", "", "");
             return dict;
-        }
-
-
-        private async Task<string> GetDriveIdFromListAsync(CancellationToken ct)
-        {
-            var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{_cfg.ListId}/drive";
-            using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
-            resp.EnsureSuccessStatusCode();
-            var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            var node = JsonNode.Parse(json)?.AsObject();
-            var id = node?["id"]?.ToString();
-            if (string.IsNullOrWhiteSpace(id))
-                throw new InvalidOperationException("Não foi possível resolver o driveId para a ListId informada.");
-            return id!;
-        }
-
-        private static string[] ParseCsvLine(string line)
-        {
-            var list = new List<string>();
-            var sb = new StringBuilder();
-            bool inQuotes = false;
-
-            for (int i = 0; i < line.Length; i++)
-            {
-                var c = line[i];
-                if (c == '"')
-                {
-                    if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
-                    {
-                        sb.Append('"');
-                        i++; // skip escaped quote
-                    }
-                    else
-                    {
-                        inQuotes = !inQuotes;
-                    }
-                }
-                else if (c == ',' && !inQuotes)
-                {
-                    list.Add(sb.ToString());
-                    sb.Clear();
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            list.Add(sb.ToString());
-            return list.Select(s => s.Trim('"')).ToArray();
         }
     }
 }
