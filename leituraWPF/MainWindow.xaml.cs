@@ -576,7 +576,8 @@ namespace leituraWPF
                         var arquivos = Directory.GetFiles(destino).Select(Path.GetFileName);
                         var versao = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? string.Empty;
                         var usuario = _funcionario?.Nome ?? Environment.UserName;
-                        await _processadosService.AddAsync(record.NumOS, destino, usuario, arquivos, versao);
+                        var pc = Environment.UserName;
+                        await _processadosService.AddAsync(record.NumOS, destino, usuario, pc, arquivos, versao);
                         await _processadosService.TrySyncAsync();
                     }
                 }
