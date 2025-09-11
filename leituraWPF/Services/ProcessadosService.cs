@@ -35,13 +35,24 @@ namespace leituraWPF.Services
         private string? _listId;
         private readonly SemaphoreSlim _mutex = new(1, 1);
 
+        private static readonly Dictionary<string, string> TipoArquivoMap = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CON"] = "Controlador",
+            ["INV"] = "Inversor",
+            ["BAT"] = "Bateria",
+            ["PRINT"] = "Print"
+        };
+
+        private static IEnumerable<string> NormalizeArquivos(IEnumerable<string> codigos)
+            => codigos.Select(c => TipoArquivoMap.TryGetValue(c, out var full) ? full : c);
+
         private class Entry
         {
             public string NumOS { get; set; } = string.Empty;         // vai em Title
             public string Pasta { get; set; } = string.Empty;          // opcional: se existir coluna "Pasta"
             public string Usuario { get; set; } = string.Empty;        // texto
             public string Pc { get; set; } = string.Empty;             // usuário do Windows
-            public List<string> Arquivos { get; set; } = new();        // texto (join em ",")
+            public List<string> Arquivos { get; set; } = new();        // texto (join em "; ")
             public int Quantidade { get; set; }                         // será enviado como string
             public string Versao { get; set; } = string.Empty;         // texto
             public bool Sincronizado { get; set; }
@@ -65,7 +76,7 @@ namespace leituraWPF.Services
             try
             {
                 var list = await LoadAsync().ConfigureAwait(false);
-                var arr = arquivos?.ToList() ?? new List<string>();
+                var arr = NormalizeArquivos(arquivos ?? Array.Empty<string>()).ToList();
                 list.Add(new Entry
                 {
                     NumOS = numos ?? string.Empty,
@@ -164,7 +175,8 @@ namespace leituraWPF.Services
                     // Arquivos (texto, truncado para ~255)
                     if (colArquivos != null)
                     {
-                        var joined = string.Join(",", item.Arquivos ?? new List<string>());
+                        var nomes = NormalizeArquivos(item.Arquivos ?? new List<string>());
+                        var joined = string.Join("; ", nomes);
                         const int max = 255; // ajuste se sua coluna aceitar mais
                         if (joined.Length > max)
                             joined = joined.Substring(0, max - 10) + $" (+{joined.Length - (max - 10)})";
