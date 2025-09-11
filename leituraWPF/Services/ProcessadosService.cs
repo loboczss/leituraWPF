@@ -100,11 +100,19 @@ namespace leituraWPF.Services
                 }
                 _listId ??= listId;
 
-                // Teste rápido: cria item mínimo (só Title). Se falhar -> permissão/rota/tokens.
-                await ProbeCreateMinimalItemAsync(siteSpec, listId).ConfigureAwait(false);
-
-                // Garante colunas
+                // Garante que a lista possua todas as colunas necessárias
                 await EnsureColumnsAsync(siteSpec, listId).ConfigureAwait(false);
+
+                // Teste rápido: cria item mínimo (só Title). Se falhar, registra e tenta prosseguir
+                try
+                {
+                    await ProbeCreateMinimalItemAsync(siteSpec, listId).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    await LogAsync("PROBE falhou: " + ex.Message + ". Prosseguindo com sync.")
+                        .ConfigureAwait(false);
+                }
 
                 string itemsUrl = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items";
                 int ok = 0, fail = 0;
