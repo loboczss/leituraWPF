@@ -55,7 +55,7 @@ namespace leituraWPF.Services
             _http.DefaultRequestHeaders.Accept.Clear();
             _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{_cfg.ListId}/items?expand=fields(select=Matricula,Nome)&$top=5000";
+            var url = $"https://graph.microsoft.com/v1.0/sites/{_cfg.SiteId}/lists/{_cfg.FuncionarioListId}/items?expand=fields(select=Matricula,Nome)&$top=5000";
             using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return null;
 
