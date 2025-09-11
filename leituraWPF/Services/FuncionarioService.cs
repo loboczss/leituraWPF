@@ -16,17 +16,6 @@ using System.Threading.Tasks;
 
 namespace leituraWPF.Services
 {
-    /// <summary>
-    /// Lê Nome e Matrícula da lista "colaboradores_automate" (ou a definida em AppConfig.FuncionarioListId)
-    /// via Microsoft Graph, com LOG detalhado em log.txt (na pasta do app).
-    ///
-    /// - Aceita AppConfig.SiteId como GUID, site-id do Graph ("{siteId},{webId}") ou URL do site
-    /// - Aceita AppConfig.FuncionarioListId como GUID OU DisplayName ("colaboradores_automate")
-    /// - Descobre e loga todos os nomes internos das colunas
-    /// - Usa $expand=fields($select=...) corretamente
-    /// - Faz paginação com @odata.nextLink
-    /// - Não loga tokens; loga status, request-id e partes do payload de resposta
-    /// </summary>
     public sealed class FuncionarioService
     {
         private readonly AppConfig _cfg;
@@ -52,23 +41,24 @@ namespace leituraWPF.Services
             _http.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
 
             _logPath = Path.Combine(AppContext.BaseDirectory, "log.txt");
+            _ = LogAsync("========= FuncionarioService inicializado =========");
         }
 
-        // ====================== API PRINCIPAL ======================
+        // ====================== API ======================
 
         /// <summary>
-        /// Baixa Nome e Matrícula para um arquivo JSON local. Retorna o caminho do arquivo ou null.
+        /// Baixa Nome e Matrícula da lista e grava em JSON. Retorna caminho do arquivo ou null.
         /// </summary>
         public async Task<string?> DownloadJsonAsync(string targetFolder, CancellationToken ct = default)
         {
-            SafeDeleteOldLog(); // opcional: comente se quiser acumular históricos
             await LogAsync("=== DownloadJsonAsync: início ===");
+            await LogAsync($"targetFolder='{targetFolder}'");
 
             try
             {
                 Directory.CreateDirectory(targetFolder);
 
-                // 1) Auth
+                // Auth
                 string token;
                 try
                 {
@@ -84,66 +74,62 @@ namespace leituraWPF.Services
                     return null;
                 }
 
-                // 2) Resolve site
+                // Site
                 var siteSpec = await ResolveSiteSpecifierAsync(_cfg.SiteId).ConfigureAwait(false);
-                await LogAsync($"SiteId fornecido: '{_cfg.SiteId}' -> siteSpec: '{siteSpec ?? "(null)"}'");
+                await LogAsync($"AppConfig.SiteId='{_cfg.SiteId}' => siteSpec='{siteSpec ?? "(null)"}'");
                 if (siteSpec is null) return null;
 
-                // 3) Resolve lista
+                // Lista
                 var alvoLista = string.IsNullOrWhiteSpace(_cfg.FuncionarioListId) ? "colaboradores_automate" : _cfg.FuncionarioListId!;
                 var listId = await ResolveListIdAsync(siteSpec, alvoLista).ConfigureAwait(false);
-                await LogAsync($"Lista alvo: '{alvoLista}' -> listId='{listId ?? "(null)"}'");
+                await LogAsync($"Lista alvo='{alvoLista}' => listId='{listId ?? "(null)"}'");
                 if (string.IsNullOrEmpty(listId)) return null;
 
-                // 4) Dump das colunas (debug pesado)
-                var colsDump = await DumpColumnsAsync(siteSpec, listId).ConfigureAwait(false);
-
-                // 5) Mapeia nomes internos prováveis
+                // Colunas (dump + mapa)
+                await DumpColumnsAsync(siteSpec, listId).ConfigureAwait(false);
                 var colMap = await GetColumnsMapAsync(siteSpec, listId).ConfigureAwait(false);
                 string? nomeCol = ResolveInternal(colMap, "Nome", "Name", "Colaborador", "Funcionario", "Funcionário");
                 string? matricCol = ResolveInternal(colMap, "Matricula", "Matrícula", "Registro", "ID Funcional", "ID", "Matric");
                 await LogAsync($"Mapeamento inferido: Nome='{nomeCol ?? "-"}' | Matricula='{matricCol ?? "-"}'");
 
-                // 6) Monta select
                 var selects = new List<string> { "Title" };
                 if (nomeCol != null) selects.Add(nomeCol);
                 if (matricCol != null) selects.Add(matricCol);
                 var selectCsv = string.Join(",", selects.Distinct());
-                await LogAsync($"$expand=fields($select={selectCsv})");
+                await LogAsync($"SELECT -> $expand=fields($select={selectCsv})");
 
-                // 7) Teste rápido (top=1) e loga primeiros campos
+                // Probe 1 item
                 await ProbeOneAsync(siteSpec, listId, selectCsv, ct).ConfigureAwait(false);
 
-                // 8) Paginação e coleta
+                // Paginação
                 var funcionarios = new List<Funcionario>();
                 string? nextUrl = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items?$top=500&$expand=fields($select={selectCsv})";
+                int page = 0, total = 0, add = 0, drop = 0;
 
-                int page = 0, totalLidos = 0, adicionados = 0, descartados = 0;
                 while (!string.IsNullOrEmpty(nextUrl))
                 {
                     page++;
                     await LogAsync($"GET PAGE #{page}: {nextUrl}");
                     using var resp = await _http.GetAsync(nextUrl!, ct).ConfigureAwait(false);
                     await LogResponseAsync(resp);
-
                     var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
                     if (!resp.IsSuccessStatusCode)
                     {
-                        await LogAsync($"ERRO: status {(int)resp.StatusCode} {resp.ReasonPhrase}. Body={Trunc(text, 1200)}");
+                        await LogAsync($"ERRO PAGE #{page}: {(int)resp.StatusCode} {resp.ReasonPhrase}. Body={Trunc(text, 1200)}");
                         return null;
                     }
 
                     var root = JsonNode.Parse(text)!.AsObject();
                     var items = root["value"]?.AsArray() ?? new JsonArray();
-                    await LogAsync($"Itens recebidos nesta página: {items.Count}");
+                    await LogAsync($"Itens na página: {items.Count}");
 
                     foreach (var it in items.OfType<JsonObject>())
                     {
-                        totalLidos++;
+                        total++;
                         var f = it["fields"] as JsonObject;
-                        if (f is null) { descartados++; continue; }
+                        if (f is null) { drop++; continue; }
 
-                        // tenta pelos mapeados; cai para nomes óbvios; tenta anti-acentuação SharePoint (x00ed)
                         var nome =
                             (nomeCol != null ? f[nomeCol]?.ToString() : null) ??
                             f["Nome"]?.ToString() ??
@@ -152,92 +138,104 @@ namespace leituraWPF.Services
                         var matricula =
                             (matricCol != null ? f[matricCol]?.ToString() : null) ??
                             f["Matricula"]?.ToString() ??
-                            f["Matr_x00ed_cula"]?.ToString() ??   // "Matrícula"
+                            f["Matr_x00ed_cula"]?.ToString() ??
                             f["Matric"]?.ToString() ??
                             f["Registro"]?.ToString();
 
                         if (string.IsNullOrWhiteSpace(nome) || string.IsNullOrWhiteSpace(matricula))
                         {
-                            descartados++;
+                            drop++;
                             continue;
                         }
 
                         matricula = NormalizeMatricula(matricula);
                         funcionarios.Add(new Funcionario(matricula, nome.Trim(), "", "", "", "", ""));
-                        adicionados++;
+                        add++;
                     }
 
                     nextUrl = root["@odata.nextLink"]?.ToString();
                     if (string.IsNullOrEmpty(nextUrl))
-                        await LogAsync("Sem @odata.nextLink (fim).");
+                        await LogAsync("Fim da paginação (@odata.nextLink ausente).");
                 }
 
-                await LogAsync($"TOTAL lidos: {totalLidos} | adicionados: {adicionados} | descartados: {descartados}");
+                await LogAsync($"Resumo: total lidos={total} | adicionados={add} | descartados={drop}");
 
-                // 9) Salva JSON
+                // Salva JSON
                 var dst = Path.Combine(targetFolder, "funcionarios.json");
                 await using (var fs = File.Create(dst))
                 {
                     await JsonSerializer.SerializeAsync(fs, funcionarios,
                         new JsonSerializerOptions { WriteIndented = true }, ct).ConfigureAwait(false);
                 }
-                await LogAsync($"Arquivo salvo: {dst}");
+                await LogAsync($"Arquivo gerado: {dst} (registros={funcionarios.Count})");
                 await LogAsync("=== DownloadJsonAsync: fim (SUCESSO) ===");
                 return dst;
             }
             catch (Exception ex)
             {
-                await LogAsync("EXCEPTION raiz: " + ex);
+                await LogAsync("DownloadJsonAsync EXCEPTION: " + ex);
                 await LogAsync("=== DownloadJsonAsync: fim (ERRO) ===");
                 return null;
             }
         }
 
-        /// <summary>
-        /// Lê o JSON gerado e devolve dicionário por matrícula + admin fixo.
-        /// </summary>
+        /// <summary>Lê o JSON e devolve dicionário (matrícula → Funcionario). Loga tudo.</summary>
         public async Task<Dictionary<string, Funcionario>> LoadFuncionariosAsync(string jsonPath, CancellationToken ct = default)
         {
             var dict = new Dictionary<string, Funcionario>();
+            await LogAsync("=== LoadFuncionariosAsync: início ===");
+            await LogAsync($"jsonPath='{jsonPath}'");
 
             try
             {
-                if (File.Exists(jsonPath))
+                var exists = File.Exists(jsonPath);
+                await LogAsync($"arquivo existe? {(exists ? "SIM" : "NÃO")}");
+                if (!exists)
                 {
-                    await using var fs = File.OpenRead(jsonPath);
-                    var list = await JsonSerializer.DeserializeAsync<List<Funcionario>>(fs, cancellationToken: ct).ConfigureAwait(false);
-                    if (list != null)
-                    {
-                        foreach (var f in list) dict[f.Matricula] = f;
-                    }
-                    await LogAsync($"LoadFuncionarios: carregados {dict.Count} do JSON.");
+                    await LogAsync("Arquivo não encontrado; retornando apenas admin.");
+                    dict["258790"] = new Funcionario("258790", "Administrador", "", "", "", "", "");
+                    await LogAsync("=== LoadFuncionariosAsync: fim ===");
+                    return dict;
+                }
+
+                var len = new FileInfo(jsonPath).Length;
+                await LogAsync($"tamanho do arquivo: {len} bytes");
+
+                await using var fs = File.OpenRead(jsonPath);
+                var list = await JsonSerializer.DeserializeAsync<List<Funcionario>>(fs, cancellationToken: ct).ConfigureAwait(false);
+                if (list is null)
+                {
+                    await LogAsync("JSON desserializado como null.");
                 }
                 else
                 {
-                    await LogAsync($"LoadFuncionarios: arquivo não existe: {jsonPath}");
+                    foreach (var f in list)
+                        dict[f.Matricula] = f;
+
+                    await LogAsync($"carregados {dict.Count} funcionários do JSON.");
+                    // loga os 5 primeiros
+                    foreach (var kv in dict.Take(5))
+                        await LogAsync($"  * {kv.Key} -> {kv.Value.Nome}");
                 }
             }
             catch (Exception ex)
             {
-                await LogAsync("LoadFuncionarios EXCEPTION: " + ex);
+                await LogAsync("LoadFuncionariosAsync EXCEPTION: " + ex);
             }
 
             // Admin fixo
             dict["258790"] = new Funcionario("258790", "Administrador", "", "", "", "", "");
+            await LogAsync("Admin '258790' inserido.");
+            await LogAsync("=== LoadFuncionariosAsync: fim ===");
             return dict;
         }
 
-        // ====================== HELPERS / DEBUG ======================
-
-        private void SafeDeleteOldLog()
-        {
-            try { if (File.Exists(_logPath)) File.Delete(_logPath); } catch { }
-        }
+        // ====================== Helpers / Log ======================
 
         private async Task LogAsync(string msg)
         {
             var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] {msg}{Environment.NewLine}";
-            try { await File.AppendAllTextAsync(_logPath, line); } catch { /* não quebra fluxo */ }
+            try { await File.AppendAllTextAsync(_logPath, line); } catch { }
         }
 
         private async Task LogResponseAsync(HttpResponseMessage resp)
@@ -246,25 +244,20 @@ namespace leituraWPF.Services
             {
                 var rid = resp.Headers.TryGetValues("request-id", out var a) ? a.FirstOrDefault() : null;
                 var crid = resp.Headers.TryGetValues("client-request-id", out var b) ? b.FirstOrDefault() : null;
-                await LogAsync($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase} | request-id={rid ?? "-"} | client-request-id={crid ?? "-"}");
+                await LogAsync($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase} | request-id={(rid ?? "-")} | client-request-id={(crid ?? "-")}");
             }
             catch { }
         }
 
         private static string Trunc(string s, int max) => string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max] + "...(trunc)";
-
         private static string NormalizeMatricula(string m)
         {
             var t = m.Trim();
-            // mantém números + letras (se existir). Se quiser só números, descomente o filtro:
-            // t = new string(t.Where(char.IsDigit).ToArray());
-            t = t.TrimStart('0'); // frequentemente vem com zeros à esquerda
+            t = t.TrimStart('0'); // remove zeros à esquerda (se quiser só números, filtre aqui)
             return t;
         }
-
         private static bool LooksLikeGuid(string s) => Guid.TryParse(s, out _);
 
-        /// <summary>Converte AppConfig.SiteId (GUID ou URL) em spec aceito pelo Graph.</summary>
         private async Task<string?> ResolveSiteSpecifierAsync(string? siteIdOrUrl)
         {
             if (string.IsNullOrWhiteSpace(siteIdOrUrl))
@@ -274,13 +267,10 @@ namespace leituraWPF.Services
             }
             var raw = siteIdOrUrl.Trim();
 
-            // Se já vier "sites/..." ou contiver vírgula (site-id do Graph), só ajusta
             if (raw.StartsWith("sites/", StringComparison.OrdinalIgnoreCase))
                 return raw;
             if (raw.Contains(",")) // "{siteId},{webId}"
                 return $"sites/{raw}";
-
-            // URL completa -> "sites/{host}:/sites/{path}:"
             if (raw.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
                 try
@@ -288,19 +278,17 @@ namespace leituraWPF.Services
                     var uri = new Uri(raw);
                     var host = uri.Host;
                     var segs = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-                    var idxSites = Array.FindIndex(segs, s => s.Equals("sites", StringComparison.OrdinalIgnoreCase));
-                    if (idxSites >= 0 && idxSites + 1 < segs.Length)
+                    var idx = Array.FindIndex(segs, s => s.Equals("sites", StringComparison.OrdinalIgnoreCase));
+                    if (idx >= 0 && idx + 1 < segs.Length)
                     {
-                        var sitePath = string.Join('/', segs.Skip(idxSites + 1));
+                        var sitePath = string.Join('/', segs.Skip(idx + 1));
                         return $"sites/{host}:/sites/{sitePath}:";
                     }
-                    // fallback: tenta search
                     var searchUrl = $"https://graph.microsoft.com/v1.0/sites?search={Uri.EscapeDataString(raw)}";
-                    await LogAsync($"ResolveSite: fallback search: {searchUrl}");
+                    await LogAsync($"ResolveSite fallback search: {searchUrl}");
                     var json = await _http.GetStringAsync(searchUrl).ConfigureAwait(false);
                     var id = JsonNode.Parse(json)?["value"]?.AsArray()?.OfType<JsonObject>()?.FirstOrDefault()?["id"]?.ToString();
-                    if (!string.IsNullOrEmpty(id))
-                        return $"sites/{id}";
+                    if (!string.IsNullOrEmpty(id)) return $"sites/{id}";
                 }
                 catch (Exception ex)
                 {
@@ -308,22 +296,11 @@ namespace leituraWPF.Services
                 }
                 return null;
             }
-
-            // GUID simples
-            if (LooksLikeGuid(raw))
-                return $"sites/{raw}";
-
-            // Caso seja algo como "oneengenharia.sharepoint.com:/sites/OneEngenharia:"
-            if (raw.Contains(":/sites/"))
-                return $"sites/{raw.TrimStart('/')}";
-
-            // último fallback
+            if (LooksLikeGuid(raw)) return $"sites/{raw}";
+            if (raw.Contains(":/sites/")) return $"sites/{raw.TrimStart('/')}";
             return $"sites/{raw}";
         }
 
-        /// <summary>
-        /// Se idOrName for GUID retorna ele; senão procura por DisplayName e loga alternativas.
-        /// </summary>
         private async Task<string?> ResolveListIdAsync(string siteSpec, string idOrName)
         {
             if (!string.IsNullOrWhiteSpace(idOrName) && LooksLikeGuid(idOrName))
@@ -331,7 +308,6 @@ namespace leituraWPF.Services
 
             var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists?$select=id,displayName&$top=999";
             await LogAsync("ListIndex URL: " + url);
-
             try
             {
                 var json = await _http.GetStringAsync(url).ConfigureAwait(false);
@@ -341,17 +317,14 @@ namespace leituraWPF.Services
                 {
                     var id = o["id"]?.ToString();
                     var dn = o["displayName"]?.ToString();
-                    await LogAsync($"  - List found: '{dn}' (id={id})");
+                    await LogAsync($"  - List: '{dn}' (id={id})");
                 }
 
                 var match = arr.OfType<JsonObject>()
-                    .FirstOrDefault(o => string.Equals(o["displayName"]?.ToString(), idOrName, StringComparison.OrdinalIgnoreCase));
+                    .FirstOrDefault(o => string.Equals(o["displayName"]?.ToString(), idOrName, StringComparison.OrdinalIgnoreCase) ||
+                                         string.Equals(o["displayName"]?.ToString(), "colaboradores_automate", StringComparison.OrdinalIgnoreCase));
 
-                if (match is not null)
-                    return match["id"]?.ToString();
-
-                await LogAsync($"NÃO encontrei lista com displayName='{idOrName}'.");
-                return null;
+                return match?["id"]?.ToString();
             }
             catch (Exception ex)
             {
@@ -360,12 +333,10 @@ namespace leituraWPF.Services
             }
         }
 
-        /// <summary>Dump detalhado das colunas (nome interno, displayName, “tipo” básico).</summary>
-        private async Task<string> DumpColumnsAsync(string siteSpec, string listId)
+        private async Task DumpColumnsAsync(string siteSpec, string listId)
         {
             var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/columns?$select=name,displayName,required,text,number,choice,personOrGroup,lookup";
             await LogAsync("Columns URL: " + url);
-
             try
             {
                 var json = await _http.GetStringAsync(url).ConfigureAwait(false);
@@ -383,20 +354,16 @@ namespace leituraWPF.Services
                         o["choice"] != null ? "choice" :
                         o["personOrGroup"] != null ? "person" :
                         o["lookup"] != null ? "lookup" : "other";
-
                     await LogAsync($"  [{i}] name='{name}' | displayName='{disp}' | kind={kind} | required={req}");
                 }
-                if (i == 0) await LogAsync("  (sem colunas retornadas!)");
-                return "ok";
+                if (i == 0) await LogAsync("  (sem colunas!)");
             }
             catch (Exception ex)
             {
                 await LogAsync("DumpColumnsAsync EXCEPTION: " + ex);
-                return "err";
             }
         }
 
-        /// <summary>Mapa normalizado (chave: internal ou display, sem acento/espaço) → internal.</summary>
         private async Task<Dictionary<string, string>> GetColumnsMapAsync(string siteSpec, string listId)
         {
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -450,12 +417,10 @@ namespace leituraWPF.Services
             return sb.ToString().Replace(" ", "").Replace("_", "").Replace("-", "");
         }
 
-        /// <summary>Busca 1 item só para validar endpoint/colunas e loga primeiros campos.</summary>
         private async Task ProbeOneAsync(string siteSpec, string listId, string selectCsv, CancellationToken ct)
         {
             var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items?$top=1&$expand=fields($select={selectCsv})";
             await LogAsync("ProbeOne URL: " + url);
-
             try
             {
                 using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
@@ -470,22 +435,13 @@ namespace leituraWPF.Services
 
                 var root = JsonNode.Parse(body)!.AsObject();
                 var arr = root["value"]?.AsArray() ?? new JsonArray();
-                if (arr.Count == 0)
-                {
-                    await LogAsync("ProbeOne: lista vazia (sem itens).");
-                    return;
-                }
+                if (arr.Count == 0) { await LogAsync("ProbeOne: lista sem itens."); return; }
 
                 var f = arr[0]?["fields"] as JsonObject;
-                if (f is null)
-                {
-                    await LogAsync("ProbeOne: item[0] sem 'fields'. Body=" + Trunc(body, 1000));
-                    return;
-                }
+                if (f is null) { await LogAsync("ProbeOne: item[0] sem fields."); return; }
 
-                // Dump de até 10 chaves encontradas
                 var keys = f.Select(kvp => kvp.Key).Take(10).ToArray();
-                await LogAsync("ProbeOne: primeiras chaves em fields = " + string.Join(", ", keys));
+                await LogAsync("ProbeOne fields keys: " + string.Join(", ", keys));
             }
             catch (Exception ex)
             {
