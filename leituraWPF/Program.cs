@@ -127,6 +127,35 @@ namespace leituraWPF
 
                 appCts = new CancellationTokenSource();
 
+                // Pre-download da lista de funcionários para evitar travamentos na tela de login
+                try
+                {
+                    var baseDir = AppContext.BaseDirectory;
+                    var jsonPath = Path.Combine(baseDir, "funcionarios.json");
+                    var needsDownload = !File.Exists(jsonPath) ||
+                                        DateTime.Now.Subtract(File.GetLastWriteTime(jsonPath)).TotalDays > 1;
+
+                    if (needsDownload)
+                    {
+                        using var downloadCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                        try
+                        {
+                            funcService
+                                .DownloadJsonAsync(baseDir, downloadCts.Token)
+                                .GetAwaiter()
+                                .GetResult();
+                        }
+                        catch
+                        {
+                            // falha silenciosa; a tela de login tentará novamente se necessário
+                        }
+                    }
+                }
+                catch
+                {
+                    // ignora erros de pré-carregamento
+                }
+
                 var login = new LoginWindow(funcService, backup);
 
                 // Poller com serviço externo de atualização
