@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -10,13 +11,18 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
-using leituraWPF.Utils; // <= usar AppConfig daqui
+using leituraWPF.Utils; // AppConfig daqui
 
 namespace leituraWPF.Services
 {
     /// <summary>
-    /// Gerencia o arquivo local processados.json e sincroniza com a lista SharePoint.
-    /// Versão reforçada: autodetecção de Site, checagem de colunas, logs detalhados e retry.
+    /// Sincroniza processados.json com uma lista do SharePoint via Microsoft Graph.
+    /// Cenário: todas as colunas (exceto Title) são TEXTO (Single line of text).
+    /// - NÃO cria colunas (evita 403); apenas descobre nomes internos existentes
+    /// - Envia TUDO como string (Quantidade convertida p/ string)
+    /// - Trunca "Arquivos" para ~255 chars (se single line) com sufixo "(+N)"
+    /// - Probe (cria e apaga item mínimo) para validar permissão/rota
+    /// - Retry para 429/5xx, logs detalhados
     /// </summary>
     public sealed class ProcessadosService
     {
@@ -31,11 +37,12 @@ namespace leituraWPF.Services
 
         private class Entry
         {
-            public string NumOS { get; set; } = string.Empty;
-            public string Pasta { get; set; } = string.Empty;
-            public string Usuario { get; set; } = string.Empty;
-            public int Quantidade { get; set; }
-            public string Versao { get; set; } = string.Empty;
+            public string NumOS { get; set; } = string.Empty;         // vai em Title
+            public string Pasta { get; set; } = string.Empty;          // opcional: se existir coluna "Pasta"
+            public string Usuario { get; set; } = string.Empty;        // texto
+            public List<string> Arquivos { get; set; } = new();        // texto (join em ",")
+            public int Quantidade { get; set; }                         // será enviado como string
+            public string Versao { get; set; } = string.Empty;         // texto
             public bool Sincronizado { get; set; }
         }
 
@@ -48,7 +55,9 @@ namespace leituraWPF.Services
             _logPath = Path.Combine(AppContext.BaseDirectory, "processados_sync.log");
         }
 
-        // ============ API pública ============
+        // ================== API pública ==================
+
+        // Nova assinatura (com NumOS)
         public async Task AddAsync(string numos, string pasta, string usuario, IEnumerable<string> arquivos, string versao)
         {
             await _mutex.WaitAsync().ConfigureAwait(false);
@@ -61,6 +70,7 @@ namespace leituraWPF.Services
                     NumOS = numos ?? string.Empty,
                     Pasta = pasta ?? string.Empty,
                     Usuario = usuario ?? string.Empty,
+                    Arquivos = arr,
                     Quantidade = arr.Count,
                     Versao = versao ?? string.Empty,
                     Sincronizado = false
@@ -69,6 +79,10 @@ namespace leituraWPF.Services
             }
             finally { _mutex.Release(); }
         }
+
+        // Compat anterior (sem NumOS)
+        public Task AddAsync(string pasta, string usuario, IEnumerable<string> arquivos, string versao)
+            => AddAsync(numos: string.Empty, pasta: pasta, usuario: usuario, arquivos: arquivos, versao: versao);
 
         public async Task TrySyncAsync()
         {
@@ -88,7 +102,7 @@ namespace leituraWPF.Services
                 var siteSpec = await ResolveSiteSpecifierAsync().ConfigureAwait(false);
                 if (siteSpec is null)
                 {
-                    await LogAsync("Falha ao resolver Site (SiteId/URL). Abandonando sync.").ConfigureAwait(false);
+                    await LogAsync("Falha ao resolver Site (SiteId/URL).").ConfigureAwait(false);
                     return;
                 }
 
@@ -100,37 +114,65 @@ namespace leituraWPF.Services
                 }
                 _listId ??= listId;
 
-                // Garante que a lista possua todas as colunas necessárias
-                await EnsureColumnsAsync(siteSpec, listId).ConfigureAwait(false);
+                // Valida que consigo criar item mínimo
+                await ProbeCreateMinimalItemAsync(siteSpec, listId).ConfigureAwait(false);
 
-                // Teste rápido: cria item mínimo (só Title). Se falhar, registra e tenta prosseguir
-                try
-                {
-                    await ProbeCreateMinimalItemAsync(siteSpec, listId).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    await LogAsync("PROBE falhou: " + ex.Message + ". Prosseguindo com sync.")
-                        .ConfigureAwait(false);
-                }
+                // Descobre nomes internos das colunas (sem criar nada)
+                var colMap = await GetColumnsMapAsync(siteSpec, listId).ConfigureAwait(false);
+                string? colUsuario = ResolveInternal(colMap, "Usuario", "Usuário", "User", "Responsavel", "Responsável");
+                string? colVersao = ResolveInternal(colMap, "Versao", "Versão", "Version");
+                string? colArquivos = ResolveInternal(colMap, "Arquivos", "Files", "Documentos");
+                string? colPasta = ResolveInternal(colMap, "Pasta", "Folder", "Diretorio", "Diretório", "Path");
+                string? colQuantidade = ResolveInternal(colMap, "Quantidade", "Qtd", "Quantity", "Qtde");
+
+                await LogAsync($"Mapeamento: Usuario={colUsuario ?? "-"} | Versao={colVersao ?? "-"} | Arquivos={colArquivos ?? "-"} | Pasta={colPasta ?? "-"} | Quantidade={colQuantidade ?? "-"}")
+                    .ConfigureAwait(false);
+
+                // Limpa probes antigos (se houver)
+                await CleanupOldProbeItemsAsync(siteSpec, listId).ConfigureAwait(false);
 
                 string itemsUrl = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items";
                 int ok = 0, fail = 0;
 
+                // helper local – garante string
+                static string S(object? v) => v?.ToString() ?? string.Empty;
+
                 foreach (var item in pendentes)
                 {
-                    var body = new
-                    {
-                        fields = new Dictionary<string, object?>
-                        {
-                            ["Title"] = string.IsNullOrWhiteSpace(item.NumOS) ? "(vazio)" : item.NumOS,
-                            ["Usuario"] = item.Usuario,
-                            ["Versao"] = item.Versao,
-                            ["Pasta"] = item.Pasta,
-                            ["Quantidade"] = item.Quantidade
-                        }
-                    };
+                    // Title = NumOS (fallback legível)
+                    var title = !string.IsNullOrWhiteSpace(item.NumOS)
+                        ? item.NumOS.Trim()
+                        : (string.IsNullOrWhiteSpace(item.Pasta) ? "Sem-NumOS" : $"OS-{item.Pasta}");
 
+                    var fields = new Dictionary<string, object?> { ["Title"] = S(title) };
+
+                    // Usuario (texto)
+                    if (colUsuario != null)
+                        fields[colUsuario] = S(item.Usuario);
+
+                    // Versao (texto)
+                    if (colVersao != null)
+                        fields[colVersao] = S(item.Versao);
+
+                    // Arquivos (texto, truncado para ~255)
+                    if (colArquivos != null)
+                    {
+                        var joined = string.Join(",", item.Arquivos ?? new List<string>());
+                        const int max = 255; // ajuste se sua coluna aceitar mais
+                        if (joined.Length > max)
+                            joined = joined.Substring(0, max - 10) + $" (+{joined.Length - (max - 10)})";
+                        fields[colArquivos] = joined;
+                    }
+
+                    // Pasta (texto) – só se existir
+                    if (colPasta != null)
+                        fields[colPasta] = S(item.Pasta);
+
+                    // Quantidade (coluna é TEXTO → manda string)
+                    if (colQuantidade != null)
+                        fields[colQuantidade] = item.Quantidade.ToString(CultureInfo.InvariantCulture);
+
+                    var body = new { fields };
                     var payload = JsonSerializer.Serialize(body);
                     var resp = await PostWithRetryAsync(itemsUrl, payload).ConfigureAwait(false);
 
@@ -142,8 +184,7 @@ namespace leituraWPF.Services
                     else
                     {
                         fail++;
-                        await LogAsync($"Falha ao criar item (Title='{item.NumOS}'). " +
-                                       $"HTTP {(int)resp.statusCode} {resp.statusCode}. Body={resp.body}")
+                        await LogAsync($"Falha ao criar item (Title='{title}'). HTTP {(int)resp.statusCode} {resp.statusCode}. Body={resp.body}")
                             .ConfigureAwait(false);
                     }
                 }
@@ -172,7 +213,7 @@ namespace leituraWPF.Services
             catch { return false; }
         }
 
-        // ============ Infra/Privados ============
+        // ================== Infra privada ==================
 
         private async Task PrepareGraphClientAsync()
         {
@@ -200,7 +241,7 @@ namespace leituraWPF.Services
                 return _siteSpecifier;
             }
 
-            if (raw.Contains(","))
+            if (raw.Contains(",")) // site-id do Graph
             {
                 _siteSpecifier = $"sites/{raw}";
                 return _siteSpecifier;
@@ -221,6 +262,7 @@ namespace leituraWPF.Services
                         return _siteSpecifier;
                     }
 
+                    // fallback: busca pelo site
                     var search = await _http.GetStringAsync($"https://graph.microsoft.com/v1.0/sites?search={Uri.EscapeDataString(uri.AbsoluteUri)}")
                                             .ConfigureAwait(false);
                     var id = JsonNode.Parse(search)?["value"]?.AsArray()?.OfType<JsonObject>()
@@ -256,16 +298,12 @@ namespace leituraWPF.Services
                 if (match is not null)
                     return match["id"]?.ToString();
 
-                var createBody = new
-                {
-                    displayName = listDisplayName,
-                    list = new { template = "genericList" }
-                };
+                // Tenta criar lista se não existir (pode falhar por permissão)
+                var createBody = new { displayName = listDisplayName, list = new { template = "genericList" } };
                 var payload = JsonSerializer.Serialize(createBody);
                 var resp = await _http.PostAsync($"https://graph.microsoft.com/v1.0/{siteSpec}/lists",
                                                  new StringContent(payload, Encoding.UTF8, "application/json"))
                                       .ConfigureAwait(false);
-
                 var bodyText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!resp.IsSuccessStatusCode)
                 {
@@ -284,66 +322,81 @@ namespace leituraWPF.Services
             }
         }
 
-        private async Task EnsureColumnsAsync(string siteSpec, string listId)
+        // ---- Descoberta de nomes internos (sem tipos) ----
+        private static string NormalizeKey(string? s)
         {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+            var formD = s.Normalize(NormalizationForm.FormD);
+            var sb = new StringBuilder(formD.Length);
+            foreach (var ch in formD)
+                if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+                    sb.Append(char.ToLowerInvariant(ch));
+            return sb.ToString().Replace(" ", "").Replace("_", "").Replace("-", "");
+        }
+
+        private async Task<Dictionary<string, string>> GetColumnsMapAsync(string siteSpec, string listId)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/columns?$select=id,name,displayName";
+                var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/columns?$select=name,displayName";
                 var json = await _http.GetStringAsync(url).ConfigureAwait(false);
-                var existing = (JsonNode.Parse(json)?["value"]?.AsArray() ?? new JsonArray())
-                    .OfType<JsonObject>()
-                    .Select(o => new
-                    {
-                        Name = o?["name"]?.ToString() ?? "",
-                        DisplayName = o?["displayName"]?.ToString() ?? ""
-                    })
-                    .ToList();
-
-                bool Has(string internalOrDisplay) =>
-                    existing.Any(e =>
-                        internalOrDisplay.Equals(e.Name, StringComparison.OrdinalIgnoreCase) ||
-                        internalOrDisplay.Equals(e.DisplayName, StringComparison.OrdinalIgnoreCase));
-
-                async Task CreateTextAsync(string internalName, string displayName)
+                var arr = JsonNode.Parse(json)?["value"]?.AsArray() ?? new JsonArray();
+                foreach (var o in arr.OfType<JsonObject>())
                 {
-                    var body = new { name = internalName, displayName = displayName, text = new { } };
-                    var payload = JsonSerializer.Serialize(body);
-                    var resp = await _http.PostAsync(
-                        $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/columns",
-                        new StringContent(payload, Encoding.UTF8, "application/json")).ConfigureAwait(false);
+                    var name = o?["name"]?.ToString();         // internal
+                    var disp = o?["displayName"]?.ToString();  // label
+                    if (string.IsNullOrWhiteSpace(name)) continue;
 
-                    if (!resp.IsSuccessStatusCode)
+                    var k1 = NormalizeKey(name);
+                    if (!map.ContainsKey(k1)) map[k1] = name;
+
+                    if (!string.IsNullOrWhiteSpace(disp))
                     {
-                        var t = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        await LogAsync($"Falha ao criar coluna '{displayName}' (internal '{internalName}'). " +
-                                       $"HTTP {(int)resp.StatusCode} {resp.StatusCode}. Body={t}").ConfigureAwait(false);
+                        var k2 = NormalizeKey(disp);
+                        if (!map.ContainsKey(k2)) map[k2] = name;
                     }
                 }
-
-                async Task CreateNumberAsync(string internalName, string displayName)
-                {
-                    var body = new { name = internalName, displayName = displayName, number = new { } };
-                    var payload = JsonSerializer.Serialize(body);
-                    var resp = await _http.PostAsync(
-                        $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/columns",
-                        new StringContent(payload, Encoding.UTF8, "application/json")).ConfigureAwait(false);
-
-                    if (!resp.IsSuccessStatusCode)
-                    {
-                        var t = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        await LogAsync($"Falha ao criar coluna '{displayName}' (internal '{internalName}'). " +
-                                       $"HTTP {(int)resp.StatusCode} {resp.StatusCode}. Body={t}").ConfigureAwait(false);
-                    }
-                }
-
-                if (!Has("Usuario")) await CreateTextAsync("Usuario", "Usuário").ConfigureAwait(false);
-                if (!Has("Pasta")) await CreateTextAsync("Pasta", "Pasta").ConfigureAwait(false);
-                if (!Has("Quantidade")) await CreateNumberAsync("Quantidade", "Quantidade").ConfigureAwait(false);
-                if (!Has("Versao")) await CreateTextAsync("Versao", "Versão").ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                await LogAsync("EnsureColumnsAsync EXCEPTION: " + ex).ConfigureAwait(false);
+                await LogAsync("GetColumnsMapAsync EXCEPTION: " + ex).ConfigureAwait(false);
+            }
+            return map;
+        }
+
+        private static string? ResolveInternal(Dictionary<string, string> map, params string[] candidates)
+        {
+            foreach (var c in candidates)
+            {
+                var key = NormalizeKey(c);
+                if (map.TryGetValue(key, out var internalName))
+                    return internalName;
+            }
+            return null;
+        }
+
+        private async Task CleanupOldProbeItemsAsync(string siteSpec, string listId, int maxToDelete = 200)
+        {
+            try
+            {
+                var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items?$top={maxToDelete}&expand=fields($select=Title)";
+                var json = await _http.GetStringAsync(url).ConfigureAwait(false);
+                var items = JsonNode.Parse(json)?["value"]?.AsArray() ?? new JsonArray();
+
+                foreach (var it in items.OfType<JsonObject>())
+                {
+                    var id = it?["id"]?.ToString();
+                    var title = it?["fields"]?["Title"]?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(id) && title.StartsWith("probe-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await _http.DeleteAsync($"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items/{id}").ConfigureAwait(false);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                await LogAsync("CleanupOldProbeItemsAsync EXCEPTION: " + ex).ConfigureAwait(false);
             }
         }
 
@@ -361,7 +414,7 @@ namespace leituraWPF.Services
                 {
                     await LogAsync($"PROBE falhou. HTTP {(int)resp.statusCode} {resp.statusCode}. Body={resp.body}")
                         .ConfigureAwait(false);
-                    throw new InvalidOperationException("Falha no PROBE de criação de item. Verifique permissões e SiteId/URL.");
+                    throw new InvalidOperationException("Falha no PROBE. Verifique permissões e SiteId/URL.");
                 }
                 else
                 {
@@ -430,18 +483,24 @@ namespace leituraWPF.Services
                     if (list != null) return list;
                 }
             }
-            catch (Exception ex) { await LogAsync("LoadAsync EXCEPTION: " + ex).ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                await LogAsync("LoadAsync EXCEPTION: " + ex).ConfigureAwait(false);
+            }
             return new List<Entry>();
         }
 
-        private async Task SaveAsync(List<Entry> list)
+        private async Task SaveAsync(List<Entry> entries)
         {
             try
             {
-                var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true });
+                var json = JsonSerializer.Serialize(entries, new JsonSerializerOptions { WriteIndented = true });
                 await File.WriteAllTextAsync(_filePath, json).ConfigureAwait(false);
             }
-            catch (Exception ex) { await LogAsync("SaveAsync EXCEPTION: " + ex).ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                await LogAsync("SaveAsync EXCEPTION: " + ex).ConfigureAwait(false);
+            }
         }
 
         private async Task LogAsync(string message)
@@ -451,7 +510,7 @@ namespace leituraWPF.Services
                 var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}";
                 await File.AppendAllTextAsync(_logPath, line).ConfigureAwait(false);
             }
-            catch { /* não deixa o log travar a execução */ }
+            catch { /* não trava o fluxo */ }
         }
     }
 }
