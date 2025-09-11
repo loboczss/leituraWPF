@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Net.NetworkInformation;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -137,15 +138,8 @@ namespace leituraWPF
                 var baseDir = AppContext.BaseDirectory;
                 var jsonPath = Path.Combine(baseDir, "funcionarios.json");
 
-                // Tentar download apenas se não existir ou for muito antigo (> 1 dia)
-                bool needsDownload = !File.Exists(jsonPath);
-                if (!needsDownload)
-                {
-                    var lastWrite = File.GetLastWriteTime(jsonPath);
-                    needsDownload = DateTime.Now.Subtract(lastWrite).TotalDays > 1;
-                }
-
-                if (needsDownload)
+                // Tentar atualizar sempre que houver internet disponível
+                if (NetworkInterface.GetIsNetworkAvailable())
                 {
                     try
                     {
@@ -157,7 +151,7 @@ namespace leituraWPF
                     }
                     catch
                     {
-                        // Download falhou - continuar com arquivo local se existir
+                        // Sem internet ou falha de download – continuar com arquivo local
                     }
                 }
 
