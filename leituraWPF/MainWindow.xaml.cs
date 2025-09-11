@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
-using System.DirectoryServices.AccountManagement;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -578,14 +577,6 @@ namespace leituraWPF
                         var versao = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? string.Empty;
                         var usuario = _funcionario?.Nome ?? Environment.UserName;
                         var pc = Environment.UserName;
-                        try
-                        {
-                            pc = UserPrincipal.Current?.DisplayName ?? pc;
-                        }
-                        catch
-                        {
-                            // Ignora falhas e mantém Environment.UserName
-                        }
                         await _processadosService.AddAsync(record.NumOS, destino, usuario, pc, arquivos, versao);
                         await _processadosService.TrySyncAsync();
                     }
