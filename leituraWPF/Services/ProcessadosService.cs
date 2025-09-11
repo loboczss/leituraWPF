@@ -40,6 +40,7 @@ namespace leituraWPF.Services
             public string NumOS { get; set; } = string.Empty;         // vai em Title
             public string Pasta { get; set; } = string.Empty;          // opcional: se existir coluna "Pasta"
             public string Usuario { get; set; } = string.Empty;        // texto
+            public string Pc { get; set; } = string.Empty;             // usuário do Windows
             public List<string> Arquivos { get; set; } = new();        // texto (join em ",")
             public int Quantidade { get; set; }                         // será enviado como string
             public string Versao { get; set; } = string.Empty;         // texto
@@ -58,7 +59,7 @@ namespace leituraWPF.Services
         // ================== API pública ==================
 
         // Nova assinatura (com NumOS)
-        public async Task AddAsync(string numos, string pasta, string usuario, IEnumerable<string> arquivos, string versao)
+        public async Task AddAsync(string numos, string pasta, string usuario, string pc, IEnumerable<string> arquivos, string versao)
         {
             await _mutex.WaitAsync().ConfigureAwait(false);
             try
@@ -70,6 +71,7 @@ namespace leituraWPF.Services
                     NumOS = numos ?? string.Empty,
                     Pasta = pasta ?? string.Empty,
                     Usuario = usuario ?? string.Empty,
+                    Pc = pc ?? string.Empty,
                     Arquivos = arr,
                     Quantidade = arr.Count,
                     Versao = versao ?? string.Empty,
@@ -81,8 +83,8 @@ namespace leituraWPF.Services
         }
 
         // Compat anterior (sem NumOS)
-        public Task AddAsync(string pasta, string usuario, IEnumerable<string> arquivos, string versao)
-            => AddAsync(numos: string.Empty, pasta: pasta, usuario: usuario, arquivos: arquivos, versao: versao);
+        public Task AddAsync(string pasta, string usuario, string pc, IEnumerable<string> arquivos, string versao)
+            => AddAsync(numos: string.Empty, pasta: pasta, usuario: usuario, pc: pc, arquivos: arquivos, versao: versao);
 
         public async Task TrySyncAsync()
         {
@@ -120,12 +122,13 @@ namespace leituraWPF.Services
                 // Descobre nomes internos das colunas (sem criar nada)
                 var colMap = await GetColumnsMapAsync(siteSpec, listId).ConfigureAwait(false);
                 string? colUsuario = ResolveInternal(colMap, "Usuario", "Usuário", "User", "Responsavel", "Responsável");
+                string? colPc = ResolveInternal(colMap, "PC", "Pc");
                 string? colVersao = ResolveInternal(colMap, "Versao", "Versão", "Version");
                 string? colArquivos = ResolveInternal(colMap, "Arquivos", "Files", "Documentos");
                 string? colPasta = ResolveInternal(colMap, "Pasta", "Folder", "Diretorio", "Diretório", "Path");
                 string? colQuantidade = ResolveInternal(colMap, "Quantidade", "Qtd", "Quantity", "Qtde");
 
-                await LogAsync($"Mapeamento: Usuario={colUsuario ?? "-"} | Versao={colVersao ?? "-"} | Arquivos={colArquivos ?? "-"} | Pasta={colPasta ?? "-"} | Quantidade={colQuantidade ?? "-"}")
+                await LogAsync($"Mapeamento: Usuario={colUsuario ?? "-"} | PC={colPc ?? "-"} | Versao={colVersao ?? "-"} | Arquivos={colArquivos ?? "-"} | Pasta={colPasta ?? "-"} | Quantidade={colQuantidade ?? "-"}")
                     .ConfigureAwait(false);
 
                 // Limpa probes antigos (se houver)
@@ -149,6 +152,10 @@ namespace leituraWPF.Services
                     // Usuario (texto)
                     if (colUsuario != null)
                         fields[colUsuario] = S(item.Usuario);
+
+                    // PC (texto)
+                    if (colPc != null)
+                        fields[colPc] = S(item.Pc);
 
                     // Versao (texto)
                     if (colVersao != null)
