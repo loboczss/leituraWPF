@@ -573,7 +573,18 @@ namespace leituraWPF
                     var destino = _renamer.LastDestination;
                     if (!string.IsNullOrWhiteSpace(destino) && Directory.Exists(destino))
                     {
-                        var arquivos = Directory.GetFiles(destino).Select(Path.GetFileName);
+                        var arquivos = Directory.GetFiles(destino)
+                            .Select(path =>
+                            {
+                                var name = Path.GetFileNameWithoutExtension(path);
+                                var idx = name.LastIndexOf('_');
+                                if (idx < 0 || idx == name.Length - 1) return string.Empty;
+                                var suf = name[(idx + 1)..];
+                                suf = new string(suf.TakeWhile(char.IsLetter).ToArray()).ToUpperInvariant();
+                                return suf;
+                            })
+                            .Where(s => !string.IsNullOrWhiteSpace(s))
+                            .Distinct(StringComparer.OrdinalIgnoreCase);
                         var versao = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? string.Empty;
                         var usuario = _funcionario?.Nome ?? Environment.UserName;
                         var pc = Environment.UserName;
