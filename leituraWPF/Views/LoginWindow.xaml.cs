@@ -198,7 +198,7 @@ namespace leituraWPF
 
                 if (!ct.IsCancellationRequested)
                 {
-                    StatusMessage = $"Enviados: {stats.Uploaded} | Baixados: {stats.Downloaded}";
+                    StatusMessage = $"Enviados: {stats.Uploaded}";
 
                     var statusBorder = FindName("StatusBorder") as FrameworkElement;
                     if (statusBorder != null)
@@ -328,7 +328,7 @@ namespace leituraWPF
                     try
                     {
                         var stats = SyncStatsService.Load();
-                        StatusMessage = $"Enviados: {stats.Uploaded} | Baixados: {stats.Downloaded}";
+                        StatusMessage = $"Enviados: {stats.Uploaded}";
                     }
                     catch
                     {

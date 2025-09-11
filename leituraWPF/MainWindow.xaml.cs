@@ -242,10 +242,6 @@ namespace leituraWPF
                         extraQueries: new[] { "Instalacao_AC", "Instalacao_MT" }
                     );
 
-                    var stats = SyncStatsService.Load();
-                    stats.Downloaded += downloaded.Count;
-                    SyncStatsService.Save(stats);
-
                     SetStatus($"Download finalizado. {downloaded.Count} arquivo(s).");
                     SetStatus("Atualizando cache local (manutenção)...");
                     await EnsureLocalCacheAsync(forceReload: true);
