@@ -11,6 +11,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -39,6 +40,10 @@ namespace leituraWPF.Services
             };
             _http.DefaultRequestVersion = new Version(2, 0);
             _http.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher;
+
+            // Ajuda em ambientes mais chatos do Graph
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd("leituraWPF/1.0");
+            _http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("pt-BR");
 
             _logPath = Path.Combine(AppContext.BaseDirectory, "log.txt");
             _ = LogAsync("========= FuncionarioService inicializado =========");
@@ -87,18 +92,37 @@ namespace leituraWPF.Services
 
                 // Colunas (dump + mapa)
                 await DumpColumnsAsync(siteSpec, listId).ConfigureAwait(false);
-                var colMap = await GetColumnsMapAsync(siteSpec, listId).ConfigureAwait(false);
-                string? nomeCol = ResolveInternal(colMap, "Nome", "Name", "Colaborador", "Funcionario", "Funcionário");
-                string? matricCol = ResolveInternal(colMap, "Matricula", "Matrícula", "Registro", "ID Funcional", "ID", "Matric");
-                await LogAsync($"Mapeamento inferido: Nome='{nomeCol ?? "-"}' | Matricula='{matricCol ?? "-"}'");
 
-                var selects = new List<string> { "Title" };
-                if (nomeCol != null) selects.Add(nomeCol);
-                if (matricCol != null) selects.Add(matricCol);
+                // 1) Tenta resolver pelos metadados de colunas
+                var colMap = await GetColumnsMapAsync(siteSpec, listId).ConfigureAwait(false);
+                string? nomeCol = ResolveInternal(colMap, "Nome", "Name", "Colaborador", "Funcionario", "Funcionário", "Title");
+                string? matricCol = ResolveInternal(colMap, "Matricula", "Matrícula", "Registro", "ID Funcional", "ID", "Matric");
+
+                // 2) Se ainda não achou, heurística pelo primeiro item
+                if (nomeCol == null || matricCol == null)
+                {
+                    var (nomeHeur, matricHeur, keysPreview) = await HeuristicProbeFieldsAsync(siteSpec, listId, ct).ConfigureAwait(false);
+                    await LogAsync($"Heuristic keys preview: {keysPreview}");
+                    nomeCol ??= nomeHeur;
+                    matricCol ??= matricHeur;
+                }
+
+                // 3) Fallbacks finais
+                nomeCol ??= "Title"; // Nome geralmente é Title renomeado
+                if (matricCol == null)
+                {
+                    // Tenta variantes frequentes
+                    matricCol = "Matr_x00ed_cula"; // “Matrícula” internalizado
+                    await LogAsync("matricCol não encontrado; usando fallback 'Matr_x00ed_cula'");
+                }
+
+                await LogAsync($"Mapeamento final: Nome='{nomeCol}' | Matricula='{matricCol}'");
+
+                var selects = new List<string> { "Title", nomeCol, matricCol };
                 var selectCsv = string.Join(",", selects.Distinct());
                 await LogAsync($"SELECT -> $expand=fields($select={selectCsv})");
 
-                // Probe 1 item
+                // Probe 1 item (e loga fields)
                 await ProbeOneAsync(siteSpec, listId, selectCsv, ct).ConfigureAwait(false);
 
                 // Paginação
@@ -130,17 +154,25 @@ namespace leituraWPF.Services
                         var f = it["fields"] as JsonObject;
                         if (f is null) { drop++; continue; }
 
-                        var nome =
-                            (nomeCol != null ? f[nomeCol]?.ToString() : null) ??
-                            f["Nome"]?.ToString() ??
-                            f["Title"]?.ToString();
+                        // Cria um índice normalizado das chaves existentes para buscas tolerantes
+                        var keyIndex = f.ToDictionary(kvp => NormalizeKey(DecodeSharePointInternalName(kvp.Key)), kvp => kvp.Key);
 
-                        var matricula =
-                            (matricCol != null ? f[matricCol]?.ToString() : null) ??
-                            f["Matricula"]?.ToString() ??
-                            f["Matr_x00ed_cula"]?.ToString() ??
-                            f["Matric"]?.ToString() ??
-                            f["Registro"]?.ToString();
+                        string nome = ReadBest(f, keyIndex, nomeCol, "Nome", "Title");
+                        string matricula = ReadBest(f, keyIndex, matricCol, "Matricula", "Matr_x00ed_cula", "Matric", "Registro");
+
+                        if (string.IsNullOrWhiteSpace(nome))
+                        {
+                            // Heurística extra: qualquer chave contendo "nome"
+                            var kNome = keyIndex.Keys.FirstOrDefault(k => k.Contains("nome"));
+                            if (kNome != null) nome = ObjectToString(f[keyIndex[kNome]]);
+                        }
+
+                        if (string.IsNullOrWhiteSpace(matricula))
+                        {
+                            // Heurística extra: qualquer chave contendo "matric"
+                            var kMat = keyIndex.Keys.FirstOrDefault(k => k.Contains("matric"));
+                            if (kMat != null) matricula = ObjectToString(f[keyIndex[kMat]]);
+                        }
 
                         if (string.IsNullOrWhiteSpace(nome) || string.IsNullOrWhiteSpace(matricula))
                         {
@@ -160,7 +192,7 @@ namespace leituraWPF.Services
 
                 await LogAsync($"Resumo: total lidos={total} | adicionados={add} | descartados={drop}");
 
-                // Salva JSON
+                // Salva JSON (somente Nome e Matrícula presentes no modelo Funcionario)
                 var dst = Path.Combine(targetFolder, "funcionarios.json");
                 var tmp = dst + ".tmp";
                 try
@@ -261,12 +293,15 @@ namespace leituraWPF.Services
         }
 
         private static string Trunc(string s, int max) => string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max] + "...(trunc)";
+
         private static string NormalizeMatricula(string m)
         {
-            var t = m.Trim();
-            t = t.TrimStart('0'); // remove zeros à esquerda (se quiser só números, filtre aqui)
+            // Ajuste aqui conforme tua regra de negócio
+            var t = ObjectToString(m).Trim();
+            t = t.TrimStart('0'); // remova se zeros à esquerda forem relevantes
             return t;
         }
+
         private static bool LooksLikeGuid(string s) => Guid.TryParse(s, out _);
 
         private async Task<string?> ResolveSiteSpecifierAsync(string? siteIdOrUrl)
@@ -278,6 +313,11 @@ namespace leituraWPF.Services
             }
             var raw = siteIdOrUrl.Trim();
 
+            // Formatos aceitos:
+            // - "sites/{siteId},{webId}"
+            // - "sites/{id}"
+            // - "sites/oneengenharia.sharepoint.com:/sites/OneEngenharia:"
+            // - URL "https://oneengenharia.sharepoint.com/sites/OneEngenharia"
             if (raw.StartsWith("sites/", StringComparison.OrdinalIgnoreCase))
                 return raw;
             if (raw.Contains(",")) // "{siteId},{webId}"
@@ -317,7 +357,7 @@ namespace leituraWPF.Services
             if (!string.IsNullOrWhiteSpace(idOrName) && LooksLikeGuid(idOrName))
                 return idOrName;
 
-            var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists?$select=id,displayName&$top=999";
+            var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists?$select=id,displayName,name&$top=999";
             await LogAsync("ListIndex URL: " + url);
             try
             {
@@ -328,12 +368,21 @@ namespace leituraWPF.Services
                 {
                     var id = o["id"]?.ToString();
                     var dn = o["displayName"]?.ToString();
-                    await LogAsync($"  - List: '{dn}' (id={id})");
+                    var apiName = o["name"]?.ToString();
+                    await LogAsync($"  - List: display='{dn}' | apiName='{apiName}' | id={id}");
                 }
 
+                // Match por displayName OU apiName, acento-insensitive
+                string target = idOrName;
+                var targetN = NormalizeKey(target);
                 var match = arr.OfType<JsonObject>()
-                    .FirstOrDefault(o => string.Equals(o["displayName"]?.ToString(), idOrName, StringComparison.OrdinalIgnoreCase) ||
-                                         string.Equals(o["displayName"]?.ToString(), "colaboradores_automate", StringComparison.OrdinalIgnoreCase));
+                    .FirstOrDefault(o =>
+                    {
+                        var dn = NormalizeKey(o["displayName"]?.ToString());
+                        var ap = NormalizeKey(o["name"]?.ToString());
+                        return dn == targetN || ap == targetN ||
+                               dn == NormalizeKey("colaboradores_automate") || ap == NormalizeKey("colaboradores_automate");
+                    });
 
                 return match?["id"]?.ToString();
             }
@@ -389,8 +438,10 @@ namespace leituraWPF.Services
                     var displayName = o["displayName"]?.ToString();
                     if (string.IsNullOrWhiteSpace(internalName)) continue;
 
-                    var k1 = NormalizeKey(internalName);
-                    if (!map.ContainsKey(k1)) map[k1] = internalName;
+                    var internalDecoded = DecodeSharePointInternalName(internalName);
+
+                    var k1 = NormalizeKey(internalDecoded);
+                    if (!map.ContainsKey(k1)) map[k1] = internalName; // guardamos o original para consulta no fields
 
                     if (!string.IsNullOrWhiteSpace(displayName))
                     {
@@ -414,18 +465,102 @@ namespace leituraWPF.Services
                 if (map.TryGetValue(key, out var internalName))
                     return internalName;
             }
+
+            // EXTRA: busca por "contém" (p.ex., qualquer coisa que contenha "matric")
+            foreach (var c in candidates)
+            {
+                var frag = NormalizeKey(c);
+                var hit = map.Keys.FirstOrDefault(k => k.Contains(frag));
+                if (hit != null) return map[hit];
+            }
+
             return null;
         }
 
         private static string NormalizeKey(string? s)
         {
             if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+            // 1) Decodifica padrões _xNNNN_
+            s = DecodeSharePointInternalName(s);
+
+            // 2) Remove acentos
             var formD = s.Normalize(NormalizationForm.FormD);
             var sb = new StringBuilder(formD.Length);
             foreach (var ch in formD)
                 if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
                     sb.Append(char.ToLowerInvariant(ch));
+
+            // 3) Remove separadores comuns
             return sb.ToString().Replace(" ", "").Replace("_", "").Replace("-", "");
+        }
+
+        /// <summary>
+        /// Decodifica sequências _xNNNN_ (hex UTF-16) dos nomes internos do SharePoint.
+        /// Ex.: "Matr_x00ed_cula" -> "Matrícula"
+        /// </summary>
+        private static string DecodeSharePointInternalName(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            return Regex.Replace(s, @"_x([0-9A-Fa-f]{4})_", m =>
+            {
+                try
+                {
+                    var code = Convert.ToInt32(m.Groups[1].Value, 16);
+                    return char.ConvertFromUtf32(code);
+                }
+                catch { return m.Value; }
+            });
+        }
+
+        /// <summary>
+        /// Faz um "probe" com top=1 e tenta inferir chaves de Nome/Matrícula com base nos nomes reais do objeto fields.
+        /// </summary>
+        private async Task<(string? nomeCol, string? matricCol, string keysPreview)> HeuristicProbeFieldsAsync(string siteSpec, string listId, CancellationToken ct)
+        {
+            var url = $"https://graph.microsoft.com/v1.0/{siteSpec}/lists/{listId}/items?$top=1&$expand=fields";
+            try
+            {
+                using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
+                var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode) return (null, null, $"HTTP {(int)resp.StatusCode}");
+
+                var root = JsonNode.Parse(body)!.AsObject();
+                var arr = root["value"]?.AsArray() ?? new JsonArray();
+                if (arr.Count == 0) return (null, null, "(sem itens)");
+
+                var f = arr[0]?["fields"] as JsonObject;
+                if (f is null) return (null, null, "(sem fields)");
+
+                var keys = f.Select(kvp => kvp.Key).ToArray();
+                var preview = string.Join(", ", keys.Take(12));
+
+                // índice normalizado
+                var idx = keys.ToDictionary(k => NormalizeKey(DecodeSharePointInternalName(k)), k => k);
+
+                string? nomeCol = null;
+                string? matricCol = null;
+
+                // Nome: preferir Title ou qualquer coisa que contenha "nome"
+                if (idx.TryGetValue("title", out var titleK)) nomeCol = titleK;
+                if (nomeCol == null)
+                {
+                    var k = idx.Keys.FirstOrDefault(x => x.Contains("nome"));
+                    if (k != null) nomeCol = idx[k];
+                }
+
+                // Matrícula: qualquer coisa contendo "matric"
+                {
+                    var k = idx.Keys.FirstOrDefault(x => x.Contains("matric"));
+                    if (k != null) matricCol = idx[k];
+                }
+
+                return (nomeCol, matricCol, preview);
+            }
+            catch (Exception ex)
+            {
+                await LogAsync("HeuristicProbeFieldsAsync EXCEPTION: " + ex);
+                return (null, null, "(erro probe)");
+            }
         }
 
         private async Task ProbeOneAsync(string siteSpec, string listId, string selectCsv, CancellationToken ct)
@@ -451,13 +586,51 @@ namespace leituraWPF.Services
                 var f = arr[0]?["fields"] as JsonObject;
                 if (f is null) { await LogAsync("ProbeOne: item[0] sem fields."); return; }
 
-                var keys = f.Select(kvp => kvp.Key).Take(10).ToArray();
+                var keys = f.Select(kvp => kvp.Key).Take(20).ToArray();
                 await LogAsync("ProbeOne fields keys: " + string.Join(", ", keys));
             }
             catch (Exception ex)
             {
                 await LogAsync("ProbeOne EXCEPTION: " + ex);
             }
+        }
+
+        private static string ReadBest(JsonObject fields, Dictionary<string, string> keyIndex, params string[] preferredOrder)
+        {
+            foreach (var pref in preferredOrder)
+            {
+                if (string.IsNullOrWhiteSpace(pref)) continue;
+
+                var prefNorm = NormalizeKey(DecodeSharePointInternalName(pref));
+                if (keyIndex.TryGetValue(prefNorm, out var realKey))
+                {
+                    var val = fields[realKey];
+                    var s = ObjectToString(val);
+                    if (!string.IsNullOrWhiteSpace(s)) return s;
+                }
+
+                // tentativa direta sem normalizar (caso venha já no formato correto)
+                if (fields.TryGetPropertyValue(pref, out var v2))
+                {
+                    var s2 = ObjectToString(v2);
+                    if (!string.IsNullOrWhiteSpace(s2)) return s2;
+                }
+            }
+            return string.Empty;
+        }
+
+        private static string ObjectToString(object? o)
+        {
+            if (o == null) return string.Empty;
+            if (o is string s) return s;
+            try
+            {
+                // Alguns campos vêm como número (double/int) -> converte sem notação científica
+                if (o is JsonValue jv && jv.TryGetValue(out double d))
+                    return d.ToString("0.###############", CultureInfo.InvariantCulture);
+            }
+            catch { /* ignore */ }
+            return Convert.ToString(o, CultureInfo.InvariantCulture) ?? string.Empty;
         }
     }
 }
