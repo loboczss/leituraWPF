@@ -230,8 +230,8 @@ namespace leituraWPF
             return new UpdatePoller(
                 service: svc,
                 ownerResolver: () => GetCurrentVisibleWindow(login),
-                baseInterval: TimeSpan.FromSeconds(1),
-                maxInterval: TimeSpan.FromSeconds(1),
+                baseInterval: TimeSpan.FromMinutes(5),
+                maxInterval: TimeSpan.FromMinutes(5),
                 initialDelay: TimeSpan.Zero
             );
         }
