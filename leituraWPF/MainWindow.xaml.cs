@@ -187,9 +187,8 @@ namespace leituraWPF
                 _cts.Cancel();
                 _autoSyncTimer.Dispose();
                 _processadosTimer.Dispose();
-                // Se seu BackupUploaderService tiver Stop(), chame aqui:
-                // _backup.Stop();
-                // Removido cast para IDisposable (classe não implementa IDisposable)
+                // garante que quaisquer uploads em andamento sejam interrompidos
+                _backup.Stop();
             }
             catch { /* noop */ }
             base.OnClosed(e);

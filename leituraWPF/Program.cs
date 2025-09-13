@@ -401,9 +401,18 @@ namespace leituraWPF
                         try { proc.Kill(); } catch { }
                     }
                 }
-                current.Kill();
             }
             catch { }
+
+            try
+            {
+                // garante encerramento mesmo se threads em segundo plano permanecerem ativas
+                Environment.Exit(0);
+            }
+            catch
+            {
+                try { Process.GetCurrentProcess().Kill(); } catch { }
+            }
         }
 
         private static void EnsureVersionFile()
